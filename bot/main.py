@@ -47,31 +47,29 @@ class CalendarBot(commands.Bot):
             log.info("Loaded extension %s", ext)
 
         try:
-            synced = await self.tree.sync()
-            log.info(
-                "Synced %s global commands: %s",
-                len(synced),
-                ", ".join(self._command_sig(cmd) for cmd in synced),
-            )
-        except Exception:
-            log.exception("Global command sync failed — bot will still run")
-
-        if config.GUILD_ID is not None:
-            guild = discord.Object(id=config.GUILD_ID)
-            try:
+            if config.GUILD_ID is not None:
+                # Guild-only sync (instant). Also clear globals so Discord
+                # doesn't show every command twice.
+                guild = discord.Object(id=config.GUILD_ID)
                 self.tree.copy_global_to(guild=guild)
                 synced = await self.tree.sync(guild=guild)
+                if self.application_id is not None:
+                    await self.http.bulk_upsert_global_commands(self.application_id, [])
                 log.info(
-                    "Synced %s guild commands to %s: %s",
+                    "Synced %s guild-only commands to %s (cleared global duplicates): %s",
                     len(synced),
                     config.GUILD_ID,
                     ", ".join(self._command_sig(cmd) for cmd in synced),
                 )
-            except Exception:
-                log.exception(
-                    "Guild command sync failed for %s — bot will still run",
-                    config.GUILD_ID,
+            else:
+                synced = await self.tree.sync()
+                log.info(
+                    "Synced %s global commands: %s",
+                    len(synced),
+                    ", ".join(self._command_sig(cmd) for cmd in synced),
                 )
+        except Exception:
+            log.exception("Command sync failed — bot will still run")
 
     @staticmethod
     def _command_sig(cmd: app_commands.AppCommand) -> str:
