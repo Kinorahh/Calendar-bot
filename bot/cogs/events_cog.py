@@ -8,6 +8,7 @@ from discord.ext import commands
 
 from bot.add_wizard import EventAddProceedView
 from bot.formatting import build_event_embed
+from bot.messaging import send_ephemeral
 from bot.parsers import parse_date, parse_time_24h
 from bot.permissions import require_manager
 from bot.views import EventInterestView
@@ -31,11 +32,11 @@ class EventsCog(commands.Cog):
         view = EventAddProceedView(
             self.bot, interaction.guild.id, interaction.user.id
         )
-        await interaction.response.send_message(
+        await send_ephemeral(
+            interaction,
             "Click **Proceed** to input event information "
             "(title, date as `YYYY-MM-DD`, and 24-hour time like `22:00`).",
             view=view,
-            ephemeral=True,
         )
 
     @event.command(name="edit", description="Edit an existing event (mods/admins)")
@@ -63,9 +64,7 @@ class EventsCog(commands.Cog):
 
         existing = await self.bot.db.get_event(event_id)
         if existing is None or existing.guild_id != interaction.guild.id:
-            await interaction.response.send_message(
-                "Event not found in this server.", ephemeral=True
-            )
+            await send_ephemeral(interaction, "Event not found in this server.")
             return
 
         event_date = None
@@ -73,7 +72,7 @@ class EventsCog(commands.Cog):
             try:
                 event_date = parse_date(date)
             except ValueError as exc:
-                await interaction.response.send_message(str(exc), ephemeral=True)
+                await send_ephemeral(interaction, str(exc))
                 return
 
         parsed_time = None
@@ -81,7 +80,7 @@ class EventsCog(commands.Cog):
             try:
                 parsed_time = parse_time_24h(time)
             except ValueError as exc:
-                await interaction.response.send_message(str(exc), ephemeral=True)
+                await send_ephemeral(interaction, str(exc))
                 return
 
         updated = await self.bot.db.update_event(
@@ -93,8 +92,8 @@ class EventsCog(commands.Cog):
             description=description,
         )
         assert updated is not None
-        await interaction.response.send_message(
-            f"Updated **{updated.title}** (id `{updated.id}`).", ephemeral=True
+        await send_ephemeral(
+            interaction, f"Updated **{updated.title}** (id `{updated.id}`)."
         )
         await self.bot.refresh_live_calendar(interaction.guild.id)
 
@@ -107,14 +106,12 @@ class EventsCog(commands.Cog):
 
         existing = await self.bot.db.get_event(event_id)
         if existing is None or existing.guild_id != interaction.guild.id:
-            await interaction.response.send_message(
-                "Event not found in this server.", ephemeral=True
-            )
+            await send_ephemeral(interaction, "Event not found in this server.")
             return
 
         await self.bot.db.delete_event(event_id)
-        await interaction.response.send_message(
-            f"Removed **{existing.title}** (id `{event_id}`).", ephemeral=True
+        await send_ephemeral(
+            interaction, f"Removed **{existing.title}** (id `{event_id}`)."
         )
         await self.bot.refresh_live_calendar(interaction.guild.id)
 
@@ -122,23 +119,19 @@ class EventsCog(commands.Cog):
     @app_commands.describe(event_id="Event id shown on the calendar")
     async def view(self, interaction: discord.Interaction, event_id: int) -> None:
         if interaction.guild is None:
-            await interaction.response.send_message(
-                "Use this command in a server.", ephemeral=True
-            )
+            await send_ephemeral(interaction, "Use this command in a server.")
             return
 
         event = await self.bot.db.get_event(event_id)
         if event is None or event.guild_id != interaction.guild.id:
-            await interaction.response.send_message(
-                "Event not found in this server.", ephemeral=True
-            )
+            await send_ephemeral(interaction, "Event not found in this server.")
             return
 
         user_ids = await self.bot.db.list_interested_user_ids(event_id)
         mentions = [f"<@{uid}>" for uid in user_ids]
         embed = build_event_embed(event, mentions)
         view = EventInterestView(self.bot, event_id)
-        await interaction.response.send_message(embed=embed, view=view)
+        await send_ephemeral(interaction, embed=embed, view=view)
 
 
 async def setup(bot: commands.Bot) -> None:

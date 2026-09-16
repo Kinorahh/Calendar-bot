@@ -16,6 +16,7 @@ from bot.formatting import (
     week_end,
     week_start,
 )
+from bot.messaging import TEMP_MESSAGE_SECONDS, send_ephemeral
 
 if TYPE_CHECKING:
     from bot.db import Database
@@ -98,9 +99,9 @@ class PersistentWeekCalendarView(discord.ui.View):
         from bot.permissions import can_manage_interaction
 
         if not can_manage_interaction(interaction):
-            await interaction.response.send_message(
+            await send_ephemeral(
+                interaction,
                 "Only mods/admins can browse other weeks.",
-                ephemeral=True,
             )
             return False
         return True
@@ -150,7 +151,7 @@ class WeekCalendarView(PersistentWeekCalendarView):
 
     def __init__(self, bot: discord.Client, monday: date, guild_id: int) -> None:
         super().__init__(bot)
-        self.timeout = 600
+        self.timeout = TEMP_MESSAGE_SECONDS
         self.monday = monday
         self.guild_id = guild_id
         # Ephemeral replies should not reuse the persistent custom_ids.
@@ -161,7 +162,7 @@ class WeekCalendarView(PersistentWeekCalendarView):
 
 class EventInterestView(discord.ui.View):
     def __init__(self, bot: discord.Client, event_id: int) -> None:
-        super().__init__(timeout=180)
+        super().__init__(timeout=TEMP_MESSAGE_SECONDS)
         self.bot = bot
         self.event_id = event_id
 
@@ -175,9 +176,7 @@ class EventInterestView(discord.ui.View):
     ) -> None:
         event = await self.db.get_event(self.event_id)
         if event is None:
-            await interaction.response.send_message(
-                "That event no longer exists.", ephemeral=True
-            )
+            await send_ephemeral(interaction, "That event no longer exists.")
             return
 
         interested, count = await self.db.toggle_interest(
@@ -190,9 +189,9 @@ class EventInterestView(discord.ui.View):
 
         status = "marked as interested" if interested else "removed your interest"
         await interaction.response.edit_message(embed=embed, view=self)
-        await interaction.followup.send(
+        await send_ephemeral(
+            interaction,
             f"You {status} in **{event.title}** ({count} interested).",
-            ephemeral=True,
         )
 
         refresher = getattr(self.bot, "refresh_live_calendar", None)

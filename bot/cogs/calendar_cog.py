@@ -7,6 +7,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from bot.formatting import build_week_embed, today_in_tz, week_end, week_start
+from bot.messaging import send_ephemeral
 from bot.permissions import require_manager
 from bot.views import PersistentWeekCalendarView, WeekCalendarView
 
@@ -18,9 +19,7 @@ class CalendarCog(commands.Cog):
     @app_commands.command(name="calendar", description="Show this week's event calendar")
     async def calendar(self, interaction: discord.Interaction) -> None:
         if interaction.guild is None:
-            await interaction.response.send_message(
-                "Use this command in a server.", ephemeral=True
-            )
+            await send_ephemeral(interaction, "Use this command in a server.")
             return
 
         settings = await self.bot.db.get_settings(interaction.guild.id)
@@ -35,7 +34,7 @@ class CalendarCog(commands.Cog):
             timezone_name=settings.timezone,
         )
         view = WeekCalendarView(self.bot, monday, interaction.guild.id)
-        await interaction.response.send_message(embed=embed, view=view)
+        await send_ephemeral(interaction, embed=embed, view=view)
 
     @app_commands.command(
         name="post_calendar",
@@ -53,9 +52,7 @@ class CalendarCog(commands.Cog):
 
         target = channel or interaction.channel
         if not isinstance(target, discord.TextChannel):
-            await interaction.response.send_message(
-                "Pick a text channel for the live calendar.", ephemeral=True
-            )
+            await send_ephemeral(interaction, "Pick a text channel for the live calendar.")
             return
 
         await interaction.response.defer(ephemeral=True)
@@ -73,15 +70,16 @@ class CalendarCog(commands.Cog):
             footer=PersistentWeekCalendarView.footer_for(monday, settings.timezone),
         )
         view = PersistentWeekCalendarView(self.bot)
+        # Public live calendar — this is the one message that stays in the channel.
         message = await target.send(embed=embed, view=view)
         await self.bot.db.upsert_settings(
             interaction.guild.id,
             calendar_channel_id=target.id,
             calendar_message_id=message.id,
         )
-        await interaction.followup.send(
+        await send_ephemeral(
+            interaction,
             f"Live calendar posted in {target.mention}. It will refresh when events change.",
-            ephemeral=True,
         )
 
     setup_group = app_commands.Group(
@@ -102,9 +100,9 @@ class CalendarCog(commands.Cog):
         await self.bot.db.upsert_settings(
             interaction.guild.id, announcement_channel_id=channel.id
         )
-        await interaction.response.send_message(
+        await send_ephemeral(
+            interaction,
             f"Weekly Monday snapshot will post in {channel.mention}.",
-            ephemeral=True,
         )
 
     @setup_group.command(
@@ -123,23 +121,19 @@ class CalendarCog(commands.Cog):
         try:
             ZoneInfo(timezone)
         except Exception:
-            await interaction.response.send_message(
+            await send_ephemeral(
+                interaction,
                 "Invalid timezone. Use an IANA name like `America/New_York` or `America/Chicago`.",
-                ephemeral=True,
             )
             return
 
         await self.bot.db.upsert_settings(interaction.guild.id, timezone_name=timezone)
-        await interaction.response.send_message(
-            f"Timezone set to `{timezone}`.", ephemeral=True
-        )
+        await send_ephemeral(interaction, f"Timezone set to `{timezone}`.")
 
     @setup_group.command(name="status", description="Show current calendar bot settings")
     async def status(self, interaction: discord.Interaction) -> None:
         if interaction.guild is None:
-            await interaction.response.send_message(
-                "Use this command in a server.", ephemeral=True
-            )
+            await send_ephemeral(interaction, "Use this command in a server.")
             return
         settings = await self.bot.db.get_settings(interaction.guild.id)
         announce = (
@@ -152,11 +146,11 @@ class CalendarCog(commands.Cog):
             if settings.calendar_channel_id and settings.calendar_message_id
             else "_not set — use /post_calendar_"
         )
-        await interaction.response.send_message(
+        await send_ephemeral(
+            interaction,
             f"**Timezone:** `{settings.timezone}`\n"
             f"**Weekly announce channel:** {announce}\n"
             f"**Live calendar:** {live}",
-            ephemeral=True,
         )
 
 

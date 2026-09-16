@@ -17,6 +17,7 @@ from bot.formatting import (
     week_end,
     week_start,
 )
+from bot.messaging import send_ephemeral
 from bot.views import PersistentWeekCalendarView
 
 log = logging.getLogger(__name__)
@@ -171,12 +172,10 @@ def main() -> None:
         interaction: discord.Interaction, error: app_commands.AppCommandError
     ) -> None:
         log.error("Command error: %s\n%s", error, traceback.format_exc())
-        message = "Something went wrong running that command."
         try:
-            if interaction.response.is_done():
-                await interaction.followup.send(message, ephemeral=True)
-            else:
-                await interaction.response.send_message(message, ephemeral=True)
+            await send_ephemeral(
+                interaction, "Something went wrong running that command."
+            )
         except discord.HTTPException:
             log.exception("Failed to send command error response")
 

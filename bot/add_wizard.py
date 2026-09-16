@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 import discord
 
+from bot.messaging import send_ephemeral
 from bot.parsers import parse_date, parse_time_24h
 
 if TYPE_CHECKING:
@@ -58,7 +59,7 @@ class EventInfoModal(discord.ui.Modal, title="New calendar event"):
             event_date = parse_date(str(self.date_input.value))
             event_time = parse_time_24h(str(self.time_input.value))
         except ValueError as exc:
-            await interaction.response.send_message(str(exc), ephemeral=True)
+            await send_ephemeral(interaction, str(exc))
             return
 
         try:
@@ -72,25 +73,24 @@ class EventInfoModal(discord.ui.Modal, title="New calendar event"):
             )
         except Exception:
             log.exception("Failed to save event")
-            await interaction.response.send_message(
-                "Could not save that event. Try again in a moment.",
-                ephemeral=True,
+            await send_ephemeral(
+                interaction, "Could not save that event. Try again in a moment."
             )
             return
 
-        await interaction.response.send_message(
+        await send_ephemeral(
+            interaction,
             f"Added **{event.event_time} {event.title}** on "
             f"{event.event_date.isoformat()} (id `{event.id}`).",
-            ephemeral=True,
         )
         try:
             updated = await self.bot.refresh_live_calendar(self.guild_id)
             if not updated:
-                await interaction.followup.send(
+                await send_ephemeral(
+                    interaction,
                     "Event saved, but the posted calendar isn’t linked for auto-updates yet. "
                     "Run `/post_calendar` once (or click **This Week** on the existing "
                     "calendar message) — then new events will update it automatically.",
-                    ephemeral=True,
                 )
         except Exception:
             log.exception("Failed refreshing live calendar after add")
@@ -98,14 +98,7 @@ class EventInfoModal(discord.ui.Modal, title="New calendar event"):
     async def on_error(self, interaction: discord.Interaction, error: Exception) -> None:
         log.error("EventInfoModal error: %s\n%s", error, traceback.format_exc())
         try:
-            if interaction.response.is_done():
-                await interaction.followup.send(
-                    "Something went wrong saving the event.", ephemeral=True
-                )
-            else:
-                await interaction.response.send_message(
-                    "Something went wrong saving the event.", ephemeral=True
-                )
+            await send_ephemeral(interaction, "Something went wrong saving the event.")
         except discord.HTTPException:
             pass
 
@@ -114,16 +107,16 @@ class EventAddProceedView(discord.ui.View):
     """Ephemeral Proceed button that opens the single event form."""
 
     def __init__(self, bot: "CalendarBot", guild_id: int, user_id: int) -> None:
-        super().__init__(timeout=300)
+        super().__init__(timeout=120)
         self.bot = bot
         self.guild_id = guild_id
         self.user_id = user_id
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message(
+            await send_ephemeral(
+                interaction,
                 "This setup is only for the person who ran `/event add`.",
-                ephemeral=True,
             )
             return False
         return True
@@ -141,13 +134,6 @@ class EventAddProceedView(discord.ui.View):
     ) -> None:
         log.error("EventAddProceedView error: %s\n%s", error, traceback.format_exc())
         try:
-            if interaction.response.is_done():
-                await interaction.followup.send(
-                    "Something went wrong opening the form.", ephemeral=True
-                )
-            else:
-                await interaction.response.send_message(
-                    "Something went wrong opening the form.", ephemeral=True
-                )
+            await send_ephemeral(interaction, "Something went wrong opening the form.")
         except discord.HTTPException:
             pass
