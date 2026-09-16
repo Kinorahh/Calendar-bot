@@ -16,6 +16,7 @@ from bot.formatting import (
     week_end,
     week_start,
 )
+from bot.permissions import can_manage_events
 
 if TYPE_CHECKING:
     from bot.db import Database
@@ -77,6 +78,17 @@ class PersistentWeekCalendarView(discord.ui.View):
         )
         await interaction.response.edit_message(embed=embed, view=self)
 
+    async def _require_week_nav(self, interaction: discord.Interaction) -> bool:
+        if not isinstance(interaction.user, discord.Member) or not can_manage_events(
+            interaction.user
+        ):
+            await interaction.response.send_message(
+                "Only mods/admins can browse other weeks.",
+                ephemeral=True,
+            )
+            return False
+        return True
+
     @discord.ui.button(
         label="◀ Prev",
         style=discord.ButtonStyle.secondary,
@@ -85,6 +97,8 @@ class PersistentWeekCalendarView(discord.ui.View):
     async def prev_week(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
+        if not await self._require_week_nav(interaction):
+            return
         monday = await self._current_monday(interaction)
         await self._render(interaction, shift_week(monday, -1))
 
@@ -109,6 +123,8 @@ class PersistentWeekCalendarView(discord.ui.View):
     async def next_week(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
+        if not await self._require_week_nav(interaction):
+            return
         monday = await self._current_monday(interaction)
         await self._render(interaction, shift_week(monday, 1))
 

@@ -19,7 +19,7 @@ Discord calendar bot for weekly game/event schedules. Built in Python for Railwa
 |---|---|---|
 | `/calendar` | Everyone | Show this week + navigate weeks |
 | `/post_calendar` | Mods | Pin a live updating calendar in a channel |
-| `/event add` | Mods | Add an event |
+| `/event add` | Mods | Guided setup: name → date → time (24h) |
 | `/event edit` | Mods | Edit an event by id |
 | `/event remove` | Mods | Remove an event by id |
 | `/event view` | Everyone | Event details + mark Interested |
@@ -64,7 +64,7 @@ Event ids appear on the calendar as `(#3)` next to each event.
    - `/setup timezone America/New_York` (or your TZ)
    - `/setup announce_channel #your-channel`
    - `/post_calendar` in the channel where the live week view should live
-   - `/event add title:Game Night date:2026-09-17 time:8 PM`
+   - `/event add` then follow the private prompts (name → date → time like `22:00`)
 
 ## Local run (optional)
 

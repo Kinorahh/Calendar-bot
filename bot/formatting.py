@@ -39,9 +39,9 @@ def shift_week(monday: date, delta_weeks: int) -> date:
 
 
 def format_event_line(event: Event) -> str:
-    time_bit = f" · {event.event_time}" if event.event_time else ""
+    time_bit = f"**{event.event_time}** " if event.event_time else ""
     interest = f" · ⭐ {event.interested_count}" if event.interested_count else ""
-    return f"• **{event.title}**{time_bit}{interest} `(#{event.id})`"
+    return f"• {time_bit}{event.title}{interest} `(#{event.id})`"
 
 
 def build_week_embed(
@@ -66,7 +66,10 @@ def build_week_embed(
         if day == today:
             header = f"▶ {header}"
 
-        day_events = by_day.get(day, [])
+        day_events = sorted(
+            by_day.get(day, []),
+            key=lambda ev: (ev.event_time is None, ev.event_time or "", ev.id),
+        )
         if day_events:
             body = "\n".join(format_event_line(ev) for ev in day_events)
         else:
@@ -92,7 +95,7 @@ def build_week_embed(
 def build_event_embed(event: Event, interested_mentions: Optional[list[str]] = None) -> discord.Embed:
     when = event.event_date.strftime("%A, %b %d, %Y")
     if event.event_time:
-        when = f"{when} · {event.event_time}"
+        when = f"**{event.event_time}** · {when}"
 
     embed = discord.Embed(
         title=event.title,

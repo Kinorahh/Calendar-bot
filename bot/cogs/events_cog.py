@@ -2,25 +2,15 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
-
 import discord
 from discord import app_commands
 from discord.ext import commands
 
+from bot.add_wizard import EventAddWizardView, EventDraft
 from bot.formatting import build_event_embed
+from bot.parsers import parse_date, parse_time_24h
 from bot.permissions import require_manager
 from bot.views import EventInterestView
-
-
-def parse_date(value: str) -> date:
-    value = value.strip()
-    for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%m/%d/%y"):
-        try:
-            return datetime.strptime(value, fmt).date()
-        except ValueError:
-            continue
-    raise ValueError("Use YYYY-MM-DD or MM/DD/YYYY")
 
 
 class EventsCog(commands.Cog):
@@ -30,56 +20,26 @@ class EventsCog(commands.Cog):
     event = app_commands.Group(name="event", description="Manage and view calendar events")
 
     @event.command(name="add", description="Add a calendar event (mods/admins)")
-    @app_commands.describe(
-        title="Event title",
-        date="Date as YYYY-MM-DD or MM/DD/YYYY",
-        time="Optional time text, e.g. 8 PM EST",
-        description="Optional details",
-    )
-    async def add(
-        self,
-        interaction: discord.Interaction,
-        title: str,
-        date: str,
-        time: str | None = None,
-        description: str | None = None,
-    ) -> None:
+    async def add(self, interaction: discord.Interaction) -> None:
         if not await require_manager(interaction):
             return
         assert interaction.guild is not None
 
-        try:
-            event_date = parse_date(date)
-        except ValueError as exc:
-            await interaction.response.send_message(str(exc), ephemeral=True)
-            return
-
-        if len(title) > 100:
-            await interaction.response.send_message(
-                "Title must be 100 characters or fewer.", ephemeral=True
-            )
-            return
-
-        event = await self.bot.db.add_event(
-            guild_id=interaction.guild.id,
-            title=title,
-            event_date=event_date,
-            event_time=time,
-            description=description or "",
-            created_by=interaction.user.id,
-        )
+        draft = EventDraft(guild_id=interaction.guild.id, user_id=interaction.user.id)
+        view = EventAddWizardView(self.bot, draft, step="name")
         await interaction.response.send_message(
-            f"Added **{event.title}** on {event.event_date.isoformat()} (id `{event.id}`).",
+            "**Step 1/3 — Event name**\n"
+            "Only you can see this. Click **Next** and enter the event name.",
+            view=view,
             ephemeral=True,
         )
-        await self.bot.refresh_live_calendar(interaction.guild.id)
 
     @event.command(name="edit", description="Edit an existing event (mods/admins)")
     @app_commands.describe(
         event_id="Event id shown on the calendar",
         title="New title",
         date="New date YYYY-MM-DD or MM/DD/YYYY",
-        time="New time text (leave empty to keep; use clear_time to remove)",
+        time="New time in 24-hour format, e.g. 22:00",
         clear_time="Remove the time from the event",
         description="New description",
     )
@@ -112,11 +72,19 @@ class EventsCog(commands.Cog):
                 await interaction.response.send_message(str(exc), ephemeral=True)
                 return
 
+        parsed_time = None
+        if time is not None and not clear_time:
+            try:
+                parsed_time = parse_time_24h(time)
+            except ValueError as exc:
+                await interaction.response.send_message(str(exc), ephemeral=True)
+                return
+
         updated = await self.bot.db.update_event(
             event_id,
             title=title,
             event_date=event_date,
-            event_time=time,
+            event_time=parsed_time,
             clear_time=clear_time,
             description=description,
         )
