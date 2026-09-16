@@ -1,0 +1,173 @@
+"""Event create / edit / remove / view commands."""
+
+from __future__ import annotations
+
+from datetime import date, datetime
+
+import discord
+from discord import app_commands
+from discord.ext import commands
+
+from bot.formatting import build_event_embed
+from bot.permissions import require_manager
+from bot.views import EventInterestView
+
+
+def parse_date(value: str) -> date:
+    value = value.strip()
+    for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%m/%d/%y"):
+        try:
+            return datetime.strptime(value, fmt).date()
+        except ValueError:
+            continue
+    raise ValueError("Use YYYY-MM-DD or MM/DD/YYYY")
+
+
+class EventsCog(commands.Cog):
+    def __init__(self, bot: commands.Bot) -> None:
+        self.bot = bot
+
+    event = app_commands.Group(name="event", description="Manage and view calendar events")
+
+    @event.command(name="add", description="Add a calendar event (mods/admins)")
+    @app_commands.describe(
+        title="Event title",
+        date="Date as YYYY-MM-DD or MM/DD/YYYY",
+        time="Optional time text, e.g. 8 PM EST",
+        description="Optional details",
+    )
+    async def add(
+        self,
+        interaction: discord.Interaction,
+        title: str,
+        date: str,
+        time: str | None = None,
+        description: str | None = None,
+    ) -> None:
+        if not await require_manager(interaction):
+            return
+        assert interaction.guild is not None
+
+        try:
+            event_date = parse_date(date)
+        except ValueError as exc:
+            await interaction.response.send_message(str(exc), ephemeral=True)
+            return
+
+        if len(title) > 100:
+            await interaction.response.send_message(
+                "Title must be 100 characters or fewer.", ephemeral=True
+            )
+            return
+
+        event = await self.bot.db.add_event(
+            guild_id=interaction.guild.id,
+            title=title,
+            event_date=event_date,
+            event_time=time,
+            description=description or "",
+            created_by=interaction.user.id,
+        )
+        await interaction.response.send_message(
+            f"Added **{event.title}** on {event.event_date.isoformat()} (id `{event.id}`).",
+            ephemeral=True,
+        )
+        await self.bot.refresh_live_calendar(interaction.guild.id)
+
+    @event.command(name="edit", description="Edit an existing event (mods/admins)")
+    @app_commands.describe(
+        event_id="Event id shown on the calendar",
+        title="New title",
+        date="New date YYYY-MM-DD or MM/DD/YYYY",
+        time="New time text (leave empty to keep; use clear_time to remove)",
+        clear_time="Remove the time from the event",
+        description="New description",
+    )
+    async def edit(
+        self,
+        interaction: discord.Interaction,
+        event_id: int,
+        title: str | None = None,
+        date: str | None = None,
+        time: str | None = None,
+        clear_time: bool = False,
+        description: str | None = None,
+    ) -> None:
+        if not await require_manager(interaction):
+            return
+        assert interaction.guild is not None
+
+        existing = await self.bot.db.get_event(event_id)
+        if existing is None or existing.guild_id != interaction.guild.id:
+            await interaction.response.send_message(
+                "Event not found in this server.", ephemeral=True
+            )
+            return
+
+        event_date = None
+        if date is not None:
+            try:
+                event_date = parse_date(date)
+            except ValueError as exc:
+                await interaction.response.send_message(str(exc), ephemeral=True)
+                return
+
+        updated = await self.bot.db.update_event(
+            event_id,
+            title=title,
+            event_date=event_date,
+            event_time=time,
+            clear_time=clear_time,
+            description=description,
+        )
+        assert updated is not None
+        await interaction.response.send_message(
+            f"Updated **{updated.title}** (id `{updated.id}`).", ephemeral=True
+        )
+        await self.bot.refresh_live_calendar(interaction.guild.id)
+
+    @event.command(name="remove", description="Remove an event (mods/admins)")
+    @app_commands.describe(event_id="Event id shown on the calendar")
+    async def remove(self, interaction: discord.Interaction, event_id: int) -> None:
+        if not await require_manager(interaction):
+            return
+        assert interaction.guild is not None
+
+        existing = await self.bot.db.get_event(event_id)
+        if existing is None or existing.guild_id != interaction.guild.id:
+            await interaction.response.send_message(
+                "Event not found in this server.", ephemeral=True
+            )
+            return
+
+        await self.bot.db.delete_event(event_id)
+        await interaction.response.send_message(
+            f"Removed **{existing.title}** (id `{event_id}`).", ephemeral=True
+        )
+        await self.bot.refresh_live_calendar(interaction.guild.id)
+
+    @event.command(name="view", description="View an event and mark yourself interested")
+    @app_commands.describe(event_id="Event id shown on the calendar")
+    async def view(self, interaction: discord.Interaction, event_id: int) -> None:
+        if interaction.guild is None:
+            await interaction.response.send_message(
+                "Use this command in a server.", ephemeral=True
+            )
+            return
+
+        event = await self.bot.db.get_event(event_id)
+        if event is None or event.guild_id != interaction.guild.id:
+            await interaction.response.send_message(
+                "Event not found in this server.", ephemeral=True
+            )
+            return
+
+        user_ids = await self.bot.db.list_interested_user_ids(event_id)
+        mentions = [f"<@{uid}>" for uid in user_ids]
+        embed = build_event_embed(event, mentions)
+        view = EventInterestView(self.bot, event_id)
+        await interaction.response.send_message(embed=embed, view=view)
+
+
+async def setup(bot: commands.Bot) -> None:
+    await bot.add_cog(EventsCog(bot))
