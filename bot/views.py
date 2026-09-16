@@ -79,9 +79,9 @@ class PersistentWeekCalendarView(discord.ui.View):
         await interaction.response.edit_message(embed=embed, view=self)
 
     async def _require_week_nav(self, interaction: discord.Interaction) -> bool:
-        if not isinstance(interaction.user, discord.Member) or not can_manage_events(
-            interaction.user
-        ):
+        from bot.permissions import can_manage_interaction
+
+        if not can_manage_interaction(interaction):
             await interaction.response.send_message(
                 "Only mods/admins can browse other weeks.",
                 ephemeral=True,

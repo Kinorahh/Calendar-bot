@@ -6,7 +6,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from bot.add_wizard import EventAddWizardView, EventDraft
+from bot.add_wizard import EventDraft, EventNameModal
 from bot.formatting import build_event_embed
 from bot.parsers import parse_date, parse_time_24h
 from bot.permissions import require_manager
@@ -29,13 +29,9 @@ class EventsCog(commands.Cog):
         assert interaction.guild is not None
 
         draft = EventDraft(guild_id=interaction.guild.id, user_id=interaction.user.id)
-        view = EventAddWizardView(self.bot, draft, step="name")
-        await interaction.response.send_message(
-            "**Step 1/3 — Event name**\n"
-            "Only you can see this. Click **Next** and enter the event name.",
-            view=view,
-            ephemeral=True,
-        )
+        # Responding with a modal must be the first (and immediate) response.
+        await interaction.response.send_modal(EventNameModal(self.bot, draft))
+
 
     @event.command(name="edit", description="Edit an existing event (mods/admins)")
     @app_commands.describe(

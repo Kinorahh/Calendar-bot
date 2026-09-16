@@ -33,7 +33,7 @@ class CalendarBot(commands.Bot):
         intents = discord.Intents.default()
         intents.guilds = True
         super().__init__(command_prefix="!", intents=intents)
-        self.db = Database(config.DATABASE_PATH)
+        self.db = Database(config.resolve_database_path())
 
     async def setup_hook(self) -> None:
         await self.db.connect()
@@ -41,34 +41,44 @@ class CalendarBot(commands.Bot):
 
         for ext in COGS:
             await self.load_extension(ext)
+            log.info("Loaded extension %s", ext)
 
-        # Global sync can take up to ~1 hour to reach Discord clients.
-        synced = await self.tree.sync()
-        log.info(
-            "Synced %s global commands: %s",
-            len(synced),
-            ", ".join(self._command_sig(cmd) for cmd in synced),
-        )
-
-        # Guild sync is instant — set GUILD_ID in Railway while testing.
-        if config.GUILD_ID:
-            guild = discord.Object(id=int(config.GUILD_ID))
-            # Clear stale guild copies (e.g. old /event add with options), then resync.
-            self.tree.clear_commands(guild=guild)
-            await self.tree.sync(guild=guild)
-            self.tree.copy_global_to(guild=guild)
-            synced = await self.tree.sync(guild=guild)
+        try:
+            synced = await self.tree.sync()
             log.info(
-                "Synced %s guild commands to %s: %s",
+                "Synced %s global commands: %s",
                 len(synced),
-                config.GUILD_ID,
                 ", ".join(self._command_sig(cmd) for cmd in synced),
             )
+        except Exception:
+            log.exception("Global command sync failed — bot will still run")
+
+        if config.GUILD_ID is not None:
+            guild = discord.Object(id=config.GUILD_ID)
+            try:
+                self.tree.copy_global_to(guild=guild)
+                synced = await self.tree.sync(guild=guild)
+                log.info(
+                    "Synced %s guild commands to %s: %s",
+                    len(synced),
+                    config.GUILD_ID,
+                    ", ".join(self._command_sig(cmd) for cmd in synced),
+                )
+            except Exception:
+                log.exception(
+                    "Guild command sync failed for %s — bot will still run",
+                    config.GUILD_ID,
+                )
 
     @staticmethod
     def _command_sig(cmd: app_commands.AppCommand) -> str:
-        options = ", ".join(opt.name for opt in cmd.options) if cmd.options else "no options"
-        return f"/{cmd.name} ({options})"
+        try:
+            options = (
+                ", ".join(opt.name for opt in cmd.options) if cmd.options else "no options"
+            )
+            return f"/{cmd.name} ({options})"
+        except Exception:
+            return f"/{getattr(cmd, 'name', '?')}"
 
     async def close(self) -> None:
         await self.db.close()
@@ -76,6 +86,7 @@ class CalendarBot(commands.Bot):
 
     async def on_ready(self) -> None:
         log.info("Logged in as %s (%s)", self.user, self.user and self.user.id)
+        log.info("Database: %s", self.db.path)
 
     async def refresh_live_calendar(self, guild_id: int) -> None:
         """Edit the posted live calendar message for a guild, if configured."""
@@ -141,10 +152,13 @@ def main() -> None:
     ) -> None:
         log.error("Command error: %s\n%s", error, traceback.format_exc())
         message = "Something went wrong running that command."
-        if interaction.response.is_done():
-            await interaction.followup.send(message, ephemeral=True)
-        else:
-            await interaction.response.send_message(message, ephemeral=True)
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(message, ephemeral=True)
+            else:
+                await interaction.response.send_message(message, ephemeral=True)
+        except discord.HTTPException:
+            log.exception("Failed to send command error response")
 
     bot.run(config.DISCORD_TOKEN, log_handler=None)
 
