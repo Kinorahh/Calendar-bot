@@ -10,8 +10,10 @@ from zoneinfo import ZoneInfo
 import discord
 
 from bot.models import Event
+from bot.parsers import event_time_sort_key
 
 DAY_NAMES = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+SCHEDULE_AUTHOR = "P6M Weekly Schedule"
 
 
 def get_tz(name: str) -> ZoneInfo:
@@ -38,6 +40,37 @@ def shift_week(monday: date, delta_weeks: int) -> date:
     return monday + timedelta(weeks=delta_weeks)
 
 
+def week_label(monday: date) -> str:
+    sunday = week_end(monday)
+    return f"{monday.strftime('%b %d')} – {sunday.strftime('%b %d, %Y')}"
+
+
+def timezone_abbrev(tz_name: str, when: Optional[datetime] = None) -> str:
+    """Short zone name like EST/EDT for the given IANA timezone."""
+    moment = when or datetime.now(get_tz(tz_name))
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=get_tz(tz_name))
+    else:
+        moment = moment.astimezone(get_tz(tz_name))
+    abbrev = moment.strftime("%Z") or tz_name
+    return abbrev
+
+
+def format_last_updated(tz_name: str) -> str:
+    now = datetime.now(get_tz(tz_name))
+    # Windows-safe 12h clock without leading zero tricks that break on Windows.
+    hour12 = now.hour % 12 or 12
+    return f"{now.strftime('%b %d')}, {hour12}:{now.strftime('%M %p')}"
+
+
+def live_calendar_footer(monday: date, timezone_name: str) -> str:
+    return (
+        f"Live Calendar - Week of {week_label(monday)} - "
+        f"Timezone: {timezone_abbrev(timezone_name)} - "
+        f"Last updated {format_last_updated(timezone_name)}"
+    )
+
+
 def format_event_line(event: Event) -> str:
     time_bit = f"**{event.event_time}** " if event.event_time else ""
     interest = f" · ⭐ {event.interested_count}" if event.interested_count else ""
@@ -52,7 +85,6 @@ def build_week_embed(
     timezone_name: str,
     footer: Optional[str] = None,
 ) -> discord.Embed:
-    sunday = week_end(monday)
     by_day: dict[date, list[Event]] = defaultdict(list)
     for event in events:
         by_day[event.event_date].append(event)
@@ -68,7 +100,7 @@ def build_week_embed(
 
         day_events = sorted(
             by_day.get(day, []),
-            key=lambda ev: (ev.event_time is None, ev.event_time or "", ev.id),
+            key=lambda ev: event_time_sort_key(ev.event_time, ev.id),
         )
         if day_events:
             body = "\n".join(format_event_line(ev) for ev in day_events)
@@ -82,13 +114,18 @@ def build_week_embed(
         description = description[:3890] + "\n\n_…truncated_"
 
     embed = discord.Embed(
-        title=f"📅 Week of {monday.strftime('%b %d')} – {sunday.strftime('%b %d, %Y')}",
+        title=f"📅 Week of {week_label(monday)}",
         description=description,
         color=discord.Color.from_rgb(88, 166, 255),
-        timestamp=datetime.now(get_tz(timezone_name)),
     )
-    embed.set_author(name=f"{guild_name} schedule")
-    embed.set_footer(text=footer or f"Timezone: {timezone_name} · Use /event for details")
+    embed.set_author(name=SCHEDULE_AUTHOR)
+    embed.set_footer(
+        text=footer
+        or (
+            f"Timezone: {timezone_abbrev(timezone_name)} - "
+            f"Last updated {format_last_updated(timezone_name)}"
+        )
+    )
     return embed
 
 

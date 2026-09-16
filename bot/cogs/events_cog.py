@@ -9,7 +9,7 @@ from discord.ext import commands
 from bot.add_wizard import EventAddProceedView
 from bot.formatting import build_event_embed
 from bot.messaging import send_ephemeral
-from bot.parsers import parse_date, parse_time_24h
+from bot.parsers import parse_date, parse_time_12h
 from bot.permissions import require_manager
 from bot.views import EventInterestView
 
@@ -35,7 +35,7 @@ class EventsCog(commands.Cog):
         await send_ephemeral(
             interaction,
             "Click **Proceed** to input event information "
-            "(title, date as `YYYY-MM-DD`, and 24-hour time like `22:00`).",
+            "(title, date as `YYYY-MM-DD`, and time like `9:00 PM`).",
             view=view,
         )
 
@@ -44,7 +44,7 @@ class EventsCog(commands.Cog):
         event_id="Event id shown on the calendar",
         title="New title",
         date="New date as YYYY-MM-DD only",
-        time="New time in 24-hour format, e.g. 22:00",
+        time="New time in 12-hour format, e.g. 9:00 PM",
         clear_time="Remove the time from the event",
         description="New description",
     )
@@ -78,7 +78,7 @@ class EventsCog(commands.Cog):
         parsed_time = None
         if time is not None and not clear_time:
             try:
-                parsed_time = parse_time_24h(time)
+                parsed_time = parse_time_12h(time)
             except ValueError as exc:
                 await send_ephemeral(interaction, str(exc))
                 return

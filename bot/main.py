@@ -90,10 +90,13 @@ class CalendarBot(commands.Bot):
         log.info("Logged in as %s (%s)", self.user, self.user and self.user.id)
         log.info("Database: %s", self.db.path)
 
-    async def refresh_live_calendar(self, guild_id: int) -> bool:
+    async def refresh_live_calendar(
+        self, guild_id: int, *, force_this_week: bool = False
+    ) -> bool:
         """Edit the posted live calendar message for a guild, if configured.
 
         Returns True if the message was updated.
+        When force_this_week is True, jump to the current week (used each Monday).
         """
         settings = await self.db.get_settings(guild_id)
         if not settings.calendar_channel_id or not settings.calendar_message_id:
@@ -127,9 +130,10 @@ class CalendarBot(commands.Bot):
             return False
 
         monday = week_start(today_in_tz(settings.timezone))
-        viewed = PersistentWeekCalendarView.parse_monday(message)
-        if viewed is not None:
-            monday = viewed
+        if not force_this_week:
+            viewed = PersistentWeekCalendarView.parse_monday(message)
+            if viewed is not None:
+                monday = viewed
 
         events = await self.db.get_events_between(guild_id, monday, week_end(monday))
         guild = self.get_guild(guild_id)

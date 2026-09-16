@@ -69,6 +69,7 @@ class Database(Protocol):
     async def toggle_interest(self, event_id: int, user_id: int) -> tuple[bool, int]: ...
     async def list_interested_user_ids(self, event_id: int) -> list[int]: ...
     async def guilds_with_announcements(self) -> list[GuildSettings]: ...
+    async def guilds_with_live_calendar(self) -> list[GuildSettings]: ...
 
 
 def create_database(
@@ -419,6 +420,17 @@ class PostgresDatabase:
             )
         return [_settings_from_row(row) for row in rows]
 
+    async def guilds_with_live_calendar(self) -> list[GuildSettings]:
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT * FROM guild_settings
+                WHERE calendar_channel_id IS NOT NULL
+                  AND calendar_message_id IS NOT NULL
+                """
+            )
+        return [_settings_from_row(row) for row in rows]
+
 
 class SQLiteDatabase:
     def __init__(self, path: Path) -> None:
@@ -701,6 +713,17 @@ class SQLiteDatabase:
             """
             SELECT * FROM guild_settings
             WHERE announcement_channel_id IS NOT NULL
+            """
+        ) as cursor:
+            rows = await cursor.fetchall()
+        return [_settings_from_row(row) for row in rows]
+
+    async def guilds_with_live_calendar(self) -> list[GuildSettings]:
+        async with self.conn.execute(
+            """
+            SELECT * FROM guild_settings
+            WHERE calendar_channel_id IS NOT NULL
+              AND calendar_message_id IS NOT NULL
             """
         ) as cursor:
             rows = await cursor.fetchall()

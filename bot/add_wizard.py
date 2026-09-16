@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 import discord
 
 from bot.messaging import send_ephemeral
-from bot.parsers import parse_date, parse_time_24h
+from bot.parsers import parse_date, parse_time_12h
 
 if TYPE_CHECKING:
     from bot.main import CalendarBot
@@ -42,10 +42,10 @@ class EventInfoModal(discord.ui.Modal, title="New calendar event"):
             style=discord.TextStyle.short,
         )
         self.time_input = discord.ui.TextInput(
-            label="Time (24-hour, e.g. 22:00)",
-            placeholder="22:00",
+            label="Time (12-hour, e.g. 9:00 PM)",
+            placeholder="9:00 PM",
             min_length=4,
-            max_length=5,
+            max_length=8,
             required=True,
             style=discord.TextStyle.short,
         )
@@ -57,7 +57,7 @@ class EventInfoModal(discord.ui.Modal, title="New calendar event"):
         title = str(self.title_input.value).strip()
         try:
             event_date = parse_date(str(self.date_input.value))
-            event_time = parse_time_24h(str(self.time_input.value))
+            event_time = parse_time_12h(str(self.time_input.value))
         except ValueError as exc:
             await send_ephemeral(interaction, str(exc))
             return

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from datetime import date
+from datetime import date, datetime
 from typing import TYPE_CHECKING, Optional
 
 import discord
@@ -11,6 +11,7 @@ import discord
 from bot.formatting import (
     build_event_embed,
     build_week_embed,
+    live_calendar_footer,
     shift_week,
     today_in_tz,
     week_end,
@@ -23,6 +24,9 @@ if TYPE_CHECKING:
     from bot.main import CalendarBot
 
 
+_TITLE_WEEK_RE = re.compile(
+    r"Week of (?P<mon>\w+) (?P<day>\d+)\s*[–-]\s*(?P<mon2>\w+) (?P<day2>\d+),?\s*(?P<year>\d{4})"
+)
 _MONDAY_RE = re.compile(r"monday:(?P<iso>\d{4}-\d{2}-\d{2})")
 
 
@@ -39,20 +43,43 @@ class PersistentWeekCalendarView(discord.ui.View):
 
     @staticmethod
     def footer_for(monday: date, timezone_name: str) -> str:
-        return f"Live calendar · monday:{monday.isoformat()} · {timezone_name}"
+        return live_calendar_footer(monday, timezone_name)
 
     @classmethod
     def parse_monday(cls, message: discord.Message) -> Optional[date]:
         embed = message.embeds[0] if message.embeds else None
-        if embed is None or not embed.footer or not embed.footer.text:
+        if embed is None:
             return None
-        match = _MONDAY_RE.search(embed.footer.text)
-        if not match:
-            return None
-        try:
-            return date.fromisoformat(match.group("iso"))
-        except ValueError:
-            return None
+
+        if embed.title:
+            match = _TITLE_WEEK_RE.search(embed.title)
+            if match:
+                try:
+                    return datetime.strptime(
+                        f"{match.group('mon')} {match.group('day')} {match.group('year')}",
+                        "%b %d %Y",
+                    ).date()
+                except ValueError:
+                    pass
+
+        if embed.footer and embed.footer.text:
+            match = _MONDAY_RE.search(embed.footer.text)
+            if match:
+                try:
+                    return date.fromisoformat(match.group("iso"))
+                except ValueError:
+                    return None
+            # New footer style: "Week of Sep 14 – Sep 20, 2026"
+            match = _TITLE_WEEK_RE.search(embed.footer.text)
+            if match:
+                try:
+                    return datetime.strptime(
+                        f"{match.group('mon')} {match.group('day')} {match.group('year')}",
+                        "%b %d %Y",
+                    ).date()
+                except ValueError:
+                    return None
+        return None
 
     async def _current_monday(self, interaction: discord.Interaction) -> date:
         assert interaction.guild is not None
