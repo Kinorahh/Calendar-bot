@@ -10,7 +10,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from bot import config
-from bot.db import Database
+from bot.db import create_database
 from bot.formatting import (
     build_week_embed,
     today_in_tz,
@@ -33,7 +33,10 @@ class CalendarBot(commands.Bot):
         intents = discord.Intents.default()
         intents.guilds = True
         super().__init__(command_prefix="!", intents=intents)
-        self.db = Database(config.resolve_database_path())
+        self.db = create_database(
+            database_url=config.DATABASE_URL,
+            sqlite_path=None if config.DATABASE_URL else config.resolve_sqlite_path(),
+        )
 
     async def setup_hook(self) -> None:
         await self.db.connect()

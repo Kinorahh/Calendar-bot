@@ -1,17 +1,16 @@
 # Calendar Bot
 
-Discord calendar bot for weekly game/event schedules. Built in Python for Railway.
+Discord calendar bot for weekly game/event schedules. Built in Python for Railway + PostgreSQL.
 
 ## What it does
 
 - **Week calendar** (Mon–Sun) listing events under each day — no hour grid
 - **Live calendar message** that refreshes when events are added/edited/removed
-- **Week navigation** with Prev / This Week / Next buttons
+- **Week navigation** with Prev / This Week / Next buttons (Prev/Next = mods only)
 - **Interest / RSVP** via `/event view` + ⭐ Interested button
 - **Mods/admins only** for add / edit / remove (plus Manage Server / Administrator)
 - **Monday snapshot** posted automatically to a channel you configure
-
-> A full Discord Activity (iframe app like some games) can be a later phase. This bot covers the schedule, live updates, interest, and weekly posts from your chat.
+- **PostgreSQL** on Railway so events survive restarts and you can browse past weeks
 
 ## Commands
 
@@ -34,47 +33,61 @@ Event ids appear on the calendar as `(#3)` next to each event.
 1. Open [Discord Developer Portal](https://discord.com/developers/applications) → **New Application** → name it (e.g. Calendar Bot).
 2. Left sidebar → **Bot** → **Add Bot**.
 3. Reset / copy the **Bot Token** — you'll put this in Railway as `DISCORD_TOKEN`.
-4. Under **Privileged Gateway Intents**, you can leave them **off** (this bot does not need them).
+4. Under **Privileged Gateway Intents**, you can leave them **off**.
 5. Left sidebar → **OAuth2** → **URL Generator**:
    - Scopes: `bot`, `applications.commands`
    - Bot permissions: `Send Messages`, `Embed Links`, `Use Slash Commands`, `Read Message History`, `View Channels`
 6. Copy the generated URL, open it, invite the bot to your server.
-7. Optional but recommended while testing: copy your server (guild) ID and set `GUILD_ID` so slash commands appear instantly.
+7. Optional but recommended: copy your server (guild) ID and set `GUILD_ID` so slash commands appear instantly.
 
-## Railway setup
+## Railway setup (bot + Postgres)
 
-1. Go to [railway.com](https://railway.com) → **New Project** → **Deploy from GitHub repo** → select `Kinorahh/Calendar-bot`.
-2. Railway should detect Python via Nixpacks. Start command is already in `railway.toml`:  
-   `python -m bot.main`
-3. Open the service → **Variables** and add:
+### 1. Deploy the bot
+
+1. [railway.com](https://railway.com) → **New Project** → **Deploy from GitHub repo** → `Kinorahh/Calendar-bot`.
+2. Start command is in `railway.toml`: `python -m bot.main`
+
+### 2. Add PostgreSQL
+
+1. In the same Railway project, click **Create** → **Database** → **PostgreSQL**.
+2. Wait until the Postgres service is online.
+3. Open your **bot service** → **Variables**.
+4. Click **+ New Variable** → **Add Reference** (or “Shared Variable” / variable reference).
+5. Select the Postgres service’s **`DATABASE_URL`** and add it to the bot.
+   - Variable name on the bot should be exactly `DATABASE_URL`.
+6. You do **not** need a volume or `DATABASE_PATH` anymore when Postgres is connected.
+
+### 3. Other bot variables
 
 | Variable | Example | Notes |
 |---|---|---|
 | `DISCORD_TOKEN` | `your bot token` | Required |
-| `TIMEZONE` | `America/New_York` | Default week/Monday timezone if a server hasn't set one via `/setup` |
+| `DATABASE_URL` | *(from Postgres reference)* | Required on Railway |
+| `TIMEZONE` | `America/New_York` | Default week/Monday timezone |
 | `WEEKLY_POST_HOUR` | `9` | Local hour (0–23) for the Monday post |
 | `ADMIN_ROLE_NAMES` | `Admin,Moderator,Mod` | Role names that can manage events |
-| `DATABASE_PATH` | `/data/calendar.db` | Keep this if you mount a volume at `/data` |
-| `GUILD_ID` | `123...` | **Recommended.** Your Discord server ID. Makes slash command updates instant (otherwise Discord can take up to an hour). |
+| `GUILD_ID` | `123...` | Recommended for instant slash-command updates |
 
-4. **Persistent storage (important):**  
-   Railway's filesystem is ephemeral. Add a **Volume** mounted at `/data` so events survive redeploys. Then keep `DATABASE_PATH=/data/calendar.db`.
-5. Deploy. Check **Logs** for `Logged in as ...` and `Synced ... commands`.
-6. In Discord:
-   - `/setup timezone America/New_York` (or your TZ)
-   - `/setup announce_channel #your-channel`
-   - `/post_calendar` in the channel where the live week view should live
-   - `/event add` → **Proceed** → fill title, `YYYY-MM-DD` date, and `22:00` time in one form
+### 4. Redeploy and verify
+
+1. Redeploy the bot (Railway usually does this when variables change).
+2. In **Logs**, look for:
+   - `Connected to PostgreSQL`
+   - `Logged in as ...`
+3. In Discord, re-run setup if needed (`/setup`, `/post_calendar`), then `/event add`.
+
+Old SQLite data on the container disk is **not** migrated automatically — add events again (or ask for a one-time migration if you already have a lot).
 
 ## Local run (optional)
 
+Without Postgres, the bot uses SQLite:
+
 ```bash
 python -m venv .venv
-# Windows:
 .venv\Scripts\activate
 pip install -r requirements.txt
 copy .env.example .env
-# edit .env — set DISCORD_TOKEN and DATABASE_PATH=./data/calendar.db
+# set DISCORD_TOKEN; leave DATABASE_URL empty; optional DATABASE_PATH=./data/calendar.db
 python -m bot.main
 ```
 

@@ -36,6 +36,9 @@ ADMIN_ROLE_NAMES = {
     if name.strip()
 }
 
+# Prefer Postgres on Railway (DATABASE_URL). SQLite is for local/dev only.
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip() or None
+
 _default_db = Path(__file__).resolve().parent.parent / "data" / "calendar.db"
 _env_db = os.getenv("DATABASE_PATH", "").strip()
 DATABASE_PATH = Path(_env_db).expanduser() if _env_db else _default_db
@@ -50,7 +53,7 @@ def configure_logging() -> None:
     )
 
 
-def resolve_database_path() -> Path:
+def resolve_sqlite_path() -> Path:
     """Use DATABASE_PATH, or fall back to ./data if the preferred path isn't writable."""
     preferred = DATABASE_PATH
     try:
