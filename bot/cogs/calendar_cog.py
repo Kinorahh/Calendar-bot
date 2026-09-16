@@ -58,6 +58,8 @@ class CalendarCog(commands.Cog):
             )
             return
 
+        await interaction.response.defer(ephemeral=True)
+
         settings = await self.bot.db.get_settings(interaction.guild.id)
         monday = week_start(today_in_tz(settings.timezone))
         events = await self.bot.db.get_events_between(
@@ -77,7 +79,7 @@ class CalendarCog(commands.Cog):
             calendar_channel_id=target.id,
             calendar_message_id=message.id,
         )
-        await interaction.response.send_message(
+        await interaction.followup.send(
             f"Live calendar posted in {target.mention}. It will refresh when events change.",
             ephemeral=True,
         )

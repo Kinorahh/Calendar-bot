@@ -16,7 +16,6 @@ from bot.formatting import (
     week_end,
     week_start,
 )
-from bot.permissions import can_manage_events
 
 if TYPE_CHECKING:
     from bot.db import Database
@@ -63,8 +62,25 @@ class PersistentWeekCalendarView(discord.ui.View):
                 return parsed
         return week_start(today_in_tz(settings.timezone))
 
+    async def _remember_live_message(self, interaction: discord.Interaction) -> None:
+        """Keep DB pointed at this calendar message so event edits can refresh it."""
+        if interaction.guild is None or interaction.message is None:
+            return
+        # Ephemeral /calendar replies should not become the live calendar target.
+        if interaction.message.flags.ephemeral:
+            return
+        channel_id = interaction.channel_id
+        if channel_id is None:
+            return
+        await self.db.upsert_settings(
+            interaction.guild.id,
+            calendar_channel_id=channel_id,
+            calendar_message_id=interaction.message.id,
+        )
+
     async def _render(self, interaction: discord.Interaction, monday: date) -> None:
         assert interaction.guild is not None
+        await self._remember_live_message(interaction)
         settings = await self.db.get_settings(interaction.guild.id)
         events = await self.db.get_events_between(
             interaction.guild.id, monday, week_end(monday)

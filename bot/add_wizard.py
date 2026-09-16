@@ -84,7 +84,14 @@ class EventInfoModal(discord.ui.Modal, title="New calendar event"):
             ephemeral=True,
         )
         try:
-            await self.bot.refresh_live_calendar(self.guild_id)
+            updated = await self.bot.refresh_live_calendar(self.guild_id)
+            if not updated:
+                await interaction.followup.send(
+                    "Event saved, but the posted calendar isn’t linked for auto-updates yet. "
+                    "Run `/post_calendar` once (or click **This Week** on the existing "
+                    "calendar message) — then new events will update it automatically.",
+                    ephemeral=True,
+                )
         except Exception:
             log.exception("Failed refreshing live calendar after add")
 

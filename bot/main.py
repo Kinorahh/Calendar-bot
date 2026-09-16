@@ -91,11 +91,19 @@ class CalendarBot(commands.Bot):
         log.info("Logged in as %s (%s)", self.user, self.user and self.user.id)
         log.info("Database: %s", self.db.path)
 
-    async def refresh_live_calendar(self, guild_id: int) -> None:
-        """Edit the posted live calendar message for a guild, if configured."""
+    async def refresh_live_calendar(self, guild_id: int) -> bool:
+        """Edit the posted live calendar message for a guild, if configured.
+
+        Returns True if the message was updated.
+        """
         settings = await self.db.get_settings(guild_id)
         if not settings.calendar_channel_id or not settings.calendar_message_id:
-            return
+            log.info(
+                "No live calendar linked for guild %s — run /post_calendar "
+                "or click This Week on the posted calendar once",
+                guild_id,
+            )
+            return False
 
         channel = self.get_channel(settings.calendar_channel_id)
         if channel is None:
@@ -104,19 +112,20 @@ class CalendarBot(commands.Bot):
             except discord.HTTPException:
                 log.warning("Live calendar channel missing for guild %s", guild_id)
                 await self.db.clear_calendar_message(guild_id)
-                return
+                return False
 
         if not isinstance(channel, discord.TextChannel):
-            return
+            return False
 
         try:
             message = await channel.fetch_message(settings.calendar_message_id)
         except discord.NotFound:
+            log.warning("Live calendar message missing for guild %s", guild_id)
             await self.db.clear_calendar_message(guild_id)
-            return
+            return False
         except discord.HTTPException:
             log.exception("Failed fetching live calendar message for guild %s", guild_id)
-            return
+            return False
 
         monday = week_start(today_in_tz(settings.timezone))
         viewed = PersistentWeekCalendarView.parse_monday(message)
@@ -136,8 +145,18 @@ class CalendarBot(commands.Bot):
         view = PersistentWeekCalendarView(self)
         try:
             await message.edit(embed=embed, view=view)
+            log.info(
+                "Refreshed live calendar guild=%s channel=%s message=%s week=%s events=%s",
+                guild_id,
+                settings.calendar_channel_id,
+                settings.calendar_message_id,
+                monday.isoformat(),
+                len(events),
+            )
+            return True
         except discord.HTTPException:
             log.exception("Failed editing live calendar for guild %s", guild_id)
+            return False
 
 
 def main() -> None:
