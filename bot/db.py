@@ -14,6 +14,7 @@ import aiosqlite
 import asyncpg
 
 from bot.models import Event, GuildSettings
+from bot.parsers import convert_24h_time_if_needed
 
 log = logging.getLogger(__name__)
 
@@ -135,7 +136,10 @@ class PostgresDatabase:
     async def connect(self) -> None:
         self._pool = await asyncpg.create_pool(self._dsn, min_size=1, max_size=5)
         await self._create_tables()
+        converted = await self._migrate_event_times_to_12h()
         log.info("Connected to PostgreSQL")
+        if converted:
+            log.info("Converted %s leftover 24h event time(s) to 12h", converted)
 
     async def close(self) -> None:
         if self._pool is not None:
@@ -176,6 +180,31 @@ class PostgresDatabase:
                     ON events (guild_id, event_date);
                 """
             )
+
+    async def _migrate_event_times_to_12h(self) -> int:
+        """One-time style fix: rewrite stored 24h times like 21:00 → 9:00 PM."""
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT id, event_time FROM events WHERE event_time IS NOT NULL"
+            )
+            updated = 0
+            for row in rows:
+                converted = convert_24h_time_if_needed(row["event_time"])
+                if converted is None:
+                    continue
+                await conn.execute(
+                    "UPDATE events SET event_time = $1 WHERE id = $2",
+                    converted,
+                    row["id"],
+                )
+                updated += 1
+                log.info(
+                    "Event #%s time %s → %s",
+                    row["id"],
+                    row["event_time"],
+                    converted,
+                )
+            return updated
 
     async def get_settings(self, guild_id: int) -> GuildSettings:
         async with self.pool.acquire() as conn:
@@ -444,7 +473,10 @@ class SQLiteDatabase:
         self._conn.row_factory = aiosqlite.Row
         await self._conn.execute("PRAGMA foreign_keys = ON")
         await self._create_tables()
+        converted = await self._migrate_event_times_to_12h()
         log.info("Connected to SQLite at %s", self.path)
+        if converted:
+            log.info("Converted %s leftover 24h event time(s) to 12h", converted)
 
     async def close(self) -> None:
         if self._conn is not None:
@@ -492,6 +524,32 @@ class SQLiteDatabase:
             """
         )
         await self.conn.commit()
+
+    async def _migrate_event_times_to_12h(self) -> int:
+        """One-time style fix: rewrite stored 24h times like 21:00 → 9:00 PM."""
+        async with self.conn.execute(
+            "SELECT id, event_time FROM events WHERE event_time IS NOT NULL"
+        ) as cursor:
+            rows = await cursor.fetchall()
+        updated = 0
+        for row in rows:
+            converted = convert_24h_time_if_needed(row["event_time"])
+            if converted is None:
+                continue
+            await self.conn.execute(
+                "UPDATE events SET event_time = ? WHERE id = ?",
+                (converted, row["id"]),
+            )
+            updated += 1
+            log.info(
+                "Event #%s time %s → %s",
+                row["id"],
+                row["event_time"],
+                converted,
+            )
+        if updated:
+            await self.conn.commit()
+        return updated
 
     async def get_settings(self, guild_id: int) -> GuildSettings:
         async with self.conn.execute(

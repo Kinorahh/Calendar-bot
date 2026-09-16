@@ -89,6 +89,12 @@ class CalendarBot(commands.Bot):
     async def on_ready(self) -> None:
         log.info("Logged in as %s (%s)", self.user, self.user and self.user.id)
         log.info("Database: %s", self.db.path)
+        # Refresh posted calendars so migrated 12h times show up immediately.
+        try:
+            for settings in await self.db.guilds_with_live_calendar():
+                await self.refresh_live_calendar(settings.guild_id)
+        except Exception:
+            log.exception("Failed refreshing live calendars on startup")
 
     async def refresh_live_calendar(
         self, guild_id: int, *, force_this_week: bool = False

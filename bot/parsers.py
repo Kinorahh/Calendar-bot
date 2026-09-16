@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from datetime import date, datetime, time
+from datetime import date, datetime
 from typing import Optional
 
 _DATE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})$")
@@ -57,8 +57,17 @@ def parse_time_12h(value: str) -> str:
     raise ValueError("Use 12-hour time like `9:00 PM` or `11:30 AM`")
 
 
-# Backwards-compatible name used by older call sites.
-parse_time_24h = parse_time_12h
+def convert_24h_time_if_needed(value: Optional[str]) -> Optional[str]:
+    """Return 12h form when `value` is 24h `HH:MM`; otherwise None (already fine / unknown)."""
+    if not value:
+        return None
+    text = value.strip()
+    if _TIME_12_RE.match(text):
+        return None
+    match24 = _TIME_24_RE.match(text)
+    if match24:
+        return format_time_12h(int(match24.group(1)), int(match24.group(2)))
+    return None
 
 
 def time_to_minutes(value: Optional[str]) -> Optional[int]:
