@@ -3,19 +3,21 @@
 from __future__ import annotations
 
 import re
-from datetime import date, datetime, time
+from datetime import date, time
 
 _TIME_RE = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
+_DATE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})$")
 
 
 def parse_date(value: str) -> date:
     value = value.strip()
-    for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%m/%d/%y"):
-        try:
-            return datetime.strptime(value, fmt).date()
-        except ValueError:
-            continue
-    raise ValueError("Use YYYY-MM-DD or MM/DD/YYYY (example: 2026-09-17)")
+    match = _DATE_RE.match(value)
+    if not match:
+        raise ValueError("Date must be YYYY-MM-DD (example: 2026-09-17)")
+    try:
+        return date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
+    except ValueError as exc:
+        raise ValueError("Date must be a real calendar day in YYYY-MM-DD form") from exc
 
 
 def parse_time_24h(value: str) -> str:

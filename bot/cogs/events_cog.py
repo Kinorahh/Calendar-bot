@@ -6,7 +6,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from bot.add_wizard import EventDraft, EventNameModal
+from bot.add_wizard import EventAddProceedView
 from bot.formatting import build_event_embed
 from bot.parsers import parse_date, parse_time_24h
 from bot.permissions import require_manager
@@ -21,23 +21,28 @@ class EventsCog(commands.Cog):
 
     @event.command(
         name="add",
-        description="Add an event with a private step-by-step form (mods/admins)",
+        description="Add an event with a private form (mods/admins)",
     )
     async def add(self, interaction: discord.Interaction) -> None:
         if not await require_manager(interaction):
             return
         assert interaction.guild is not None
 
-        draft = EventDraft(guild_id=interaction.guild.id, user_id=interaction.user.id)
-        # Responding with a modal must be the first (and immediate) response.
-        await interaction.response.send_modal(EventNameModal(self.bot, draft))
-
+        view = EventAddProceedView(
+            self.bot, interaction.guild.id, interaction.user.id
+        )
+        await interaction.response.send_message(
+            "Click **Proceed** to input event information "
+            "(title, date as `YYYY-MM-DD`, and 24-hour time like `22:00`).",
+            view=view,
+            ephemeral=True,
+        )
 
     @event.command(name="edit", description="Edit an existing event (mods/admins)")
     @app_commands.describe(
         event_id="Event id shown on the calendar",
         title="New title",
-        date="New date YYYY-MM-DD or MM/DD/YYYY",
+        date="New date as YYYY-MM-DD only",
         time="New time in 24-hour format, e.g. 22:00",
         clear_time="Remove the time from the event",
         description="New description",
