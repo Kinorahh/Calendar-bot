@@ -55,7 +55,7 @@ Event ids appear on the calendar as `(#3)` next to each event.
 | `WEEKLY_POST_HOUR` | `9` | Local hour (0–23) for the Monday post |
 | `ADMIN_ROLE_NAMES` | `Admin,Moderator,Mod` | Role names that can manage events |
 | `DATABASE_PATH` | `/data/calendar.db` | Keep this if you mount a volume at `/data` |
-| `GUILD_ID` | `123...` | Optional; faster command sync while developing |
+| `GUILD_ID` | `123...` | **Recommended.** Your Discord server ID. Makes slash command updates instant (otherwise Discord can take up to an hour). |
 
 4. **Persistent storage (important):**  
    Railway's filesystem is ephemeral. Add a **Volume** mounted at `/data` so events survive redeploys. Then keep `DATABASE_PATH=/data/calendar.db`.

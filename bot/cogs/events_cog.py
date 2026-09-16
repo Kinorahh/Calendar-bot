@@ -19,7 +19,10 @@ class EventsCog(commands.Cog):
 
     event = app_commands.Group(name="event", description="Manage and view calendar events")
 
-    @event.command(name="add", description="Add a calendar event (mods/admins)")
+    @event.command(
+        name="add",
+        description="Add an event with a private step-by-step form (mods/admins)",
+    )
     async def add(self, interaction: discord.Interaction) -> None:
         if not await require_manager(interaction):
             return

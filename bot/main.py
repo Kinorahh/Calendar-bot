@@ -42,14 +42,33 @@ class CalendarBot(commands.Bot):
         for ext in COGS:
             await self.load_extension(ext)
 
+        # Global sync can take up to ~1 hour to reach Discord clients.
+        synced = await self.tree.sync()
+        log.info(
+            "Synced %s global commands: %s",
+            len(synced),
+            ", ".join(self._command_sig(cmd) for cmd in synced),
+        )
+
+        # Guild sync is instant — set GUILD_ID in Railway while testing.
         if config.GUILD_ID:
             guild = discord.Object(id=int(config.GUILD_ID))
+            # Clear stale guild copies (e.g. old /event add with options), then resync.
+            self.tree.clear_commands(guild=guild)
+            await self.tree.sync(guild=guild)
             self.tree.copy_global_to(guild=guild)
             synced = await self.tree.sync(guild=guild)
-            log.info("Synced %s guild commands to %s", len(synced), config.GUILD_ID)
-        else:
-            synced = await self.tree.sync()
-            log.info("Synced %s global commands", len(synced))
+            log.info(
+                "Synced %s guild commands to %s: %s",
+                len(synced),
+                config.GUILD_ID,
+                ", ".join(self._command_sig(cmd) for cmd in synced),
+            )
+
+    @staticmethod
+    def _command_sig(cmd: app_commands.AppCommand) -> str:
+        options = ", ".join(opt.name for opt in cmd.options) if cmd.options else "no options"
+        return f"/{cmd.name} ({options})"
 
     async def close(self) -> None:
         await self.db.close()
