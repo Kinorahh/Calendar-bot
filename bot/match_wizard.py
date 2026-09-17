@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Union
 
 import discord
 
-from bot.messaging import schedule_delete, send_ephemeral
+from bot.messaging import send_ephemeral
 from bot.parsers import parse_date, parse_time_12h
 
 if TYPE_CHECKING:
@@ -131,32 +131,6 @@ class MatchInfoModal(discord.ui.Modal, title="New match"):
                 )
         except Exception:
             log.exception("Failed refreshing live calendar after match create")
-
-        ping = (
-            f"{side_mention(self.side_a)} vs {side_mention(self.side_b)} — "
-            f"match scheduled for {event.event_date.isoformat()} at {event.event_time} "
-            f"(#{event.id})"
-        )
-        target_channel: discord.abc.Messageable | None = None
-        if self.calendar_channel_id is not None:
-            channel = self.bot.get_channel(self.calendar_channel_id)
-            if channel is None:
-                try:
-                    channel = await self.bot.fetch_channel(self.calendar_channel_id)
-                except discord.HTTPException:
-                    channel = None
-            if isinstance(channel, discord.TextChannel):
-                target_channel = channel
-        if target_channel is None and interaction.channel is not None:
-            if isinstance(interaction.channel, discord.TextChannel):
-                target_channel = interaction.channel
-
-        if target_channel is not None:
-            try:
-                message = await target_channel.send(ping)
-                schedule_delete(message, 120)
-            except discord.HTTPException:
-                log.exception("Failed sending match ping message")
 
     async def on_error(self, interaction: discord.Interaction, error: Exception) -> None:
         log.error("MatchInfoModal error: %s\n%s", error, traceback.format_exc())

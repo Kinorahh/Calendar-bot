@@ -71,9 +71,28 @@ def live_calendar_footer(monday: date, timezone_name: str) -> str:
     )
 
 
+def format_match_label(event: Event) -> str:
+    """Render match sides as Discord mentions for the calendar list."""
+    sides: list[str] = []
+    for side_type, side_id in (
+        (event.match_a_type, event.match_a_id),
+        (event.match_b_type, event.match_b_id),
+    ):
+        if side_id is None or side_type is None:
+            continue
+        if side_type == "role":
+            sides.append(f"<@&{side_id}>")
+        else:
+            sides.append(f"<@{side_id}>")
+    if len(sides) == 2:
+        return f"{sides[0]} vs {sides[1]}"
+    return event.title
+
+
 def format_event_line(event: Event) -> str:
     time_bit = f"**{event.event_time}** " if event.event_time else ""
-    return f"• {time_bit}{event.title} `(#{event.id})`"
+    label = format_match_label(event) if event.is_match else event.title
+    return f"• {time_bit}{label} `(#{event.id})`"
 
 
 def build_week_embed(
