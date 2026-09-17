@@ -21,7 +21,6 @@ Discord calendar bot for weekly game/event schedules. Built in Python for Railwa
 | `/event add` | Admins | Private Proceed → one form (title, date, time) |
 | `/event edit` | Admins or match participants | Edit an event by id |
 | `/event remove` | Admins or match participants | Remove an event by id |
-| `/event view` | Everyone | Event details (ephemeral, no buttons) |
 | `/setup timezone` | Admins | e.g. `America/New_York` |
 | `/setup status` | Admins | Show current settings |
 

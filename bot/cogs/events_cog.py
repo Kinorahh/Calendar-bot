@@ -8,7 +8,6 @@ from discord.ext import commands
 
 from bot import config
 from bot.add_wizard import EventAddProceedView
-from bot.formatting import build_event_embed
 from bot.match_messages import delete_match_ping_message, sync_match_ping_message
 from bot.messaging import send_ephemeral
 from bot.parsers import parse_date, parse_time_12h
@@ -154,21 +153,6 @@ class EventsCog(commands.Cog):
             interaction, f"Removed **{existing.title}** (id `{event_id}`)."
         )
         await self.bot.refresh_live_calendar(interaction.guild.id)
-
-    @event.command(name="view", description="View event details")
-    @app_commands.describe(event_id="Event id shown on the calendar")
-    async def view(self, interaction: discord.Interaction, event_id: int) -> None:
-        if interaction.guild is None:
-            await send_ephemeral(interaction, "Use this command in a server.")
-            return
-
-        event = await self.bot.db.get_event(event_id)
-        if event is None or event.guild_id != interaction.guild.id:
-            await send_ephemeral(interaction, "Event not found in this server.")
-            return
-
-        embed = build_event_embed(event)
-        await send_ephemeral(interaction, embed=embed)
 
 
 async def setup(bot: commands.Bot) -> None:
