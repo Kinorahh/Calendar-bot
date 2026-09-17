@@ -33,10 +33,6 @@ def side_display_name(side: MentionableSide) -> str:
     return side.name
 
 
-def side_mention(side: MentionableSide) -> str:
-    return side.mention
-
-
 def side_storage(side: MentionableSide) -> tuple[str, int]:
     return side_kind(side), side.id
 
