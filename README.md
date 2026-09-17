@@ -65,6 +65,7 @@ Event ids appear on the calendar as `(#3)` next to each event.
 | `DISCORD_TOKEN` | `your bot token` | Required |
 | `DATABASE_URL` | *(from Postgres reference)* | Required on Railway |
 | `TIMEZONE` | `America/New_York` | Default week/Monday timezone |
+| `MATCH_CHANNEL_ID` | `123...` | Channel for `/create match` + match ping posts |
 | `ADMIN_ROLE_NAMES` | `Admin,Moderator,Mod` | Role names that can manage the calendar |
 | `GUILD_ID` | `123...` | Recommended for instant slash-command updates |
 

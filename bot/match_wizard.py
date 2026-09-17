@@ -41,6 +41,17 @@ def side_storage(side: MentionableSide) -> tuple[str, int]:
     return side_kind(side), side.id
 
 
+def format_match_ping(event_date, event_time: str, event_id: int, side_a, side_b) -> str:
+    nice_date = event_date.strftime("%A, %B %d, %Y")
+    return (
+        "**Match Scheduled**\n"
+        f"{side_mention(side_a)} vs {side_mention(side_b)}\n\n"
+        f"**Date:** {nice_date}\n"
+        f"**Time:** {event_time}\n"
+        f"**Calendar ID:** #{event_id}"
+    )
+
+
 class MatchInfoModal(discord.ui.Modal, title="New match"):
     """Date and time only — title is auto-generated from the two sides."""
 
@@ -51,7 +62,7 @@ class MatchInfoModal(discord.ui.Modal, title="New match"):
         user_id: int,
         side_a: MentionableSide,
         side_b: MentionableSide,
-        calendar_channel_id: int | None,
+        match_channel_id: int,
     ) -> None:
         super().__init__()
         self.bot = bot
@@ -59,7 +70,7 @@ class MatchInfoModal(discord.ui.Modal, title="New match"):
         self.user_id = user_id
         self.side_a = side_a
         self.side_b = side_b
-        self.calendar_channel_id = calendar_channel_id
+        self.match_channel_id = match_channel_id
 
         self.date_input = discord.ui.TextInput(
             label="Date (YYYY-MM-DD only)",
@@ -132,29 +143,24 @@ class MatchInfoModal(discord.ui.Modal, title="New match"):
         except Exception:
             log.exception("Failed refreshing live calendar after match create")
 
-        # Embeds never notify — a normal message content mention is required to ping.
-        ping = (
-            f"{side_mention(self.side_a)} vs {side_mention(self.side_b)} "
-            f"— match scheduled for **{event.event_date.isoformat()}** at **{event.event_time}**"
-        )
-        target_channel: discord.abc.Messageable | None = None
-        if self.calendar_channel_id is not None:
-            channel = self.bot.get_channel(self.calendar_channel_id)
-            if channel is None:
-                try:
-                    channel = await self.bot.fetch_channel(self.calendar_channel_id)
-                except discord.HTTPException:
-                    channel = None
-            if isinstance(channel, discord.TextChannel):
-                target_channel = channel
-        if target_channel is None and interaction.channel is not None:
-            if isinstance(interaction.channel, discord.TextChannel):
-                target_channel = interaction.channel
-
-        if target_channel is not None:
+        # Embeds never notify — ping in the dedicated match channel.
+        channel = self.bot.get_channel(self.match_channel_id)
+        if channel is None:
             try:
-                message = await target_channel.send(
-                    ping,
+                channel = await self.bot.fetch_channel(self.match_channel_id)
+            except discord.HTTPException:
+                channel = None
+
+        if isinstance(channel, discord.TextChannel):
+            try:
+                await channel.send(
+                    format_match_ping(
+                        event.event_date,
+                        event.event_time or "",
+                        event.id,
+                        self.side_a,
+                        self.side_b,
+                    ),
                     allowed_mentions=discord.AllowedMentions(
                         users=True,
                         roles=True,
@@ -163,6 +169,8 @@ class MatchInfoModal(discord.ui.Modal, title="New match"):
                 )
             except discord.HTTPException:
                 log.exception("Failed sending match ping message")
+        else:
+            log.warning("Match channel %s is missing or not a text channel", self.match_channel_id)
 
     async def on_error(self, interaction: discord.Interaction, error: Exception) -> None:
         log.error("MatchInfoModal error: %s\n%s", error, traceback.format_exc())
@@ -182,7 +190,7 @@ class MatchCreateProceedView(discord.ui.View):
         user_id: int,
         side_a: MentionableSide,
         side_b: MentionableSide,
-        calendar_channel_id: int | None,
+        match_channel_id: int,
     ) -> None:
         super().__init__(timeout=120)
         self.bot = bot
@@ -190,7 +198,7 @@ class MatchCreateProceedView(discord.ui.View):
         self.user_id = user_id
         self.side_a = side_a
         self.side_b = side_b
-        self.calendar_channel_id = calendar_channel_id
+        self.match_channel_id = match_channel_id
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.user_id:
@@ -212,7 +220,7 @@ class MatchCreateProceedView(discord.ui.View):
                 self.user_id,
                 self.side_a,
                 self.side_b,
-                self.calendar_channel_id,
+                self.match_channel_id,
             )
         )
 

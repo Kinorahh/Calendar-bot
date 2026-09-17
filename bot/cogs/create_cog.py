@@ -6,6 +6,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from bot import config
 from bot.match_wizard import (
     MatchCreateProceedView,
     side_display_name,
@@ -38,6 +39,20 @@ class CreateCog(commands.Cog):
             await send_ephemeral(interaction, "Use this command in a server.")
             return
 
+        if config.MATCH_CHANNEL_ID is None:
+            await send_ephemeral(
+                interaction,
+                "Match channel is not configured. Set `MATCH_CHANNEL_ID` in Railway.",
+            )
+            return
+
+        if interaction.channel_id != config.MATCH_CHANNEL_ID:
+            await send_ephemeral(
+                interaction,
+                f"Use `/create match` in <#{config.MATCH_CHANNEL_ID}> only.",
+            )
+            return
+
         # Prefer guild Member objects when available (for display names).
         resolved_a: discord.User | discord.Member | discord.Role = side_a
         resolved_b: discord.User | discord.Member | discord.Role = side_b
@@ -61,14 +76,13 @@ class CreateCog(commands.Cog):
             await send_ephemeral(interaction, "Pick two different players or roles.")
             return
 
-        settings = await self.bot.db.get_settings(interaction.guild.id)
         view = MatchCreateProceedView(
             self.bot,
             interaction.guild.id,
             interaction.user.id,
             resolved_a,
             resolved_b,
-            settings.calendar_channel_id,
+            config.MATCH_CHANNEL_ID,
         )
         await send_ephemeral(
             interaction,

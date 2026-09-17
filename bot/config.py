@@ -23,6 +23,19 @@ if _raw_guild:
 else:
     GUILD_ID = None
 
+_raw_match_channel = os.getenv("MATCH_CHANNEL_ID", "").strip().strip('"').strip("'")
+MATCH_CHANNEL_ID: int | None
+if _raw_match_channel:
+    try:
+        MATCH_CHANNEL_ID = int(_raw_match_channel)
+    except ValueError:
+        MATCH_CHANNEL_ID = None
+        logging.getLogger(__name__).warning(
+            "Invalid MATCH_CHANNEL_ID %r — ignoring", _raw_match_channel
+        )
+else:
+    MATCH_CHANNEL_ID = None
+
 TIMEZONE = os.getenv("TIMEZONE", "America/New_York").strip()
 
 try:
