@@ -60,11 +60,8 @@ class Database(Protocol):
         self,
         event_id: int,
         *,
-        title: Optional[str] = None,
         event_date: Optional[date] = None,
         event_time: Optional[str] = None,
-        clear_time: bool = False,
-        description: Optional[str] = None,
     ) -> Optional[Event]: ...
     async def delete_event(self, event_id: int) -> bool: ...
     async def set_ping_message(
@@ -358,37 +355,25 @@ class PostgresDatabase:
         self,
         event_id: int,
         *,
-        title: Optional[str] = None,
         event_date: Optional[date] = None,
         event_time: Optional[str] = None,
-        clear_time: bool = False,
-        description: Optional[str] = None,
     ) -> Optional[Event]:
         event = await self.get_event(event_id)
         if event is None:
             return None
 
-        new_title = title.strip() if title is not None else event.title
         new_date = event_date if event_date is not None else event.event_date
-        if clear_time:
-            new_time = None
-        elif event_time is not None:
-            new_time = event_time.strip() or None
-        else:
-            new_time = event.event_time
-        new_description = description.strip() if description is not None else event.description
+        new_time = event_time.strip() if event_time is not None else event.event_time
 
         async with self.pool.acquire() as conn:
             await conn.execute(
                 """
                 UPDATE events
-                SET title = $1, event_date = $2, event_time = $3, description = $4
-                WHERE id = $5
+                SET event_date = $1, event_time = $2
+                WHERE id = $3
                 """,
-                new_title,
                 new_date,
                 new_time,
-                new_description,
                 event_id,
             )
         return await self.get_event(event_id)
@@ -705,33 +690,23 @@ class SQLiteDatabase:
         self,
         event_id: int,
         *,
-        title: Optional[str] = None,
         event_date: Optional[date] = None,
         event_time: Optional[str] = None,
-        clear_time: bool = False,
-        description: Optional[str] = None,
     ) -> Optional[Event]:
         event = await self.get_event(event_id)
         if event is None:
             return None
 
-        new_title = title.strip() if title is not None else event.title
         new_date = event_date if event_date is not None else event.event_date
-        if clear_time:
-            new_time = None
-        elif event_time is not None:
-            new_time = event_time.strip() or None
-        else:
-            new_time = event.event_time
-        new_description = description.strip() if description is not None else event.description
+        new_time = event_time.strip() if event_time is not None else event.event_time
 
         await self.conn.execute(
             """
             UPDATE events
-            SET title = ?, event_date = ?, event_time = ?, description = ?
+            SET event_date = ?, event_time = ?
             WHERE id = ?
             """,
-            (new_title, new_date.isoformat(), new_time, new_description, event_id),
+            (new_date.isoformat(), new_time, event_id),
         )
         await self.conn.commit()
         return await self.get_event(event_id)

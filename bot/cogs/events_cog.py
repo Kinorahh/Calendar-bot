@@ -11,7 +11,7 @@ from bot.add_wizard import EventAddProceedView
 from bot.match_messages import delete_match_ping_message, sync_match_ping_message
 from bot.messaging import send_ephemeral
 from bot.parsers import parse_date, parse_time_12h
-from bot.permissions import can_modify_event, has_admin_role, require_admin
+from bot.permissions import can_modify_event, require_admin
 
 
 class EventsCog(commands.Cog):
@@ -41,25 +41,19 @@ class EventsCog(commands.Cog):
 
     @event.command(
         name="edit",
-        description="Edit an existing event (admins or match participants)",
+        description="Edit an event's date or time (admins or match participants)",
     )
     @app_commands.describe(
         event_id="Event id shown on the calendar",
-        title="New title",
         date="New date as YYYY-MM-DD only",
         time="New time in 12-hour format, e.g. 9:00 PM",
-        clear_time="Remove the time from the event",
-        description="New description",
     )
     async def edit(
         self,
         interaction: discord.Interaction,
         event_id: int,
-        title: str | None = None,
         date: str | None = None,
         time: str | None = None,
-        clear_time: bool = False,
-        description: str | None = None,
     ) -> None:
         if interaction.guild is None:
             await send_ephemeral(interaction, "Use this command in a server.")
@@ -79,17 +73,11 @@ class EventsCog(commands.Cog):
             )
             return
 
-        # Match participants may only change date/time, not the match title.
-        if existing.is_match and isinstance(interaction.user, discord.Member):
-            if not has_admin_role(interaction.user):
-                if title is not None or description is not None:
-                    await send_ephemeral(
-                        interaction,
-                        "You can only change the date or time of your match.",
-                    )
-                    return
-                title = None
-                description = None
+        if date is None and time is None:
+            await send_ephemeral(
+                interaction, "Provide a new `date` and/or `time` to update."
+            )
+            return
 
         event_date = None
         if date is not None:
@@ -100,7 +88,7 @@ class EventsCog(commands.Cog):
                 return
 
         parsed_time = None
-        if time is not None and not clear_time:
+        if time is not None:
             try:
                 parsed_time = parse_time_12h(time)
             except ValueError as exc:
@@ -109,11 +97,8 @@ class EventsCog(commands.Cog):
 
         updated = await self.bot.db.update_event(
             event_id,
-            title=title,
             event_date=event_date,
             event_time=parsed_time,
-            clear_time=clear_time,
-            description=description,
         )
         assert updated is not None
         await send_ephemeral(
