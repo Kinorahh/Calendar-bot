@@ -9,6 +9,7 @@ from discord.ext import commands
 from bot import config
 from bot.add_wizard import EventAddProceedView
 from bot.formatting import build_event_embed
+from bot.match_messages import delete_match_ping_message, sync_match_ping_message
 from bot.messaging import send_ephemeral
 from bot.parsers import parse_date, parse_time_12h
 from bot.permissions import can_modify_event, has_admin_role, require_admin
@@ -120,6 +121,8 @@ class EventsCog(commands.Cog):
             interaction, f"Updated **{updated.title}** (id `{updated.id}`)."
         )
         await self.bot.refresh_live_calendar(interaction.guild.id)
+        if updated.is_match:
+            await sync_match_ping_message(self.bot, updated)
 
     @event.command(
         name="remove",
@@ -145,6 +148,7 @@ class EventsCog(commands.Cog):
             )
             return
 
+        await delete_match_ping_message(self.bot, existing)
         await self.bot.db.delete_event(event_id)
         await send_ephemeral(
             interaction, f"Removed **{existing.title}** (id `{event_id}`)."

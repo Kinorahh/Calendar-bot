@@ -67,6 +67,10 @@ class Database(Protocol):
         description: Optional[str] = None,
     ) -> Optional[Event]: ...
     async def delete_event(self, event_id: int) -> bool: ...
+    async def set_ping_message(
+        self, event_id: int, *, channel_id: int, message_id: int
+    ) -> None: ...
+    async def clear_ping_message(self, event_id: int) -> None: ...
     async def get_event(self, event_id: int) -> Optional[Event]: ...
     async def get_events_between(
         self, guild_id: int, start: date, end: date
@@ -131,6 +135,8 @@ def _event_from_row(row: Any) -> Event:
         match_a_id=_optional_int(_row_value(row, "match_a_id")),
         match_b_type=_row_value(row, "match_b_type"),
         match_b_id=_optional_int(_row_value(row, "match_b_id")),
+        ping_channel_id=_optional_int(_row_value(row, "ping_channel_id")),
+        ping_message_id=_optional_int(_row_value(row, "ping_message_id")),
     )
 
 
@@ -184,7 +190,9 @@ class PostgresDatabase:
                     match_a_type TEXT,
                     match_a_id BIGINT,
                     match_b_type TEXT,
-                    match_b_id BIGINT
+                    match_b_id BIGINT,
+                    ping_channel_id BIGINT,
+                    ping_message_id BIGINT
                 );
 
                 CREATE TABLE IF NOT EXISTS event_interest (
@@ -206,6 +214,8 @@ class PostgresDatabase:
                 "ALTER TABLE events ADD COLUMN IF NOT EXISTS match_a_id BIGINT",
                 "ALTER TABLE events ADD COLUMN IF NOT EXISTS match_b_type TEXT",
                 "ALTER TABLE events ADD COLUMN IF NOT EXISTS match_b_id BIGINT",
+                "ALTER TABLE events ADD COLUMN IF NOT EXISTS ping_channel_id BIGINT",
+                "ALTER TABLE events ADD COLUMN IF NOT EXISTS ping_message_id BIGINT",
             ):
                 await conn.execute(stmt)
 
@@ -389,6 +399,32 @@ class PostgresDatabase:
         # asyncpg returns strings like "DELETE 1"
         return result.endswith("1")
 
+    async def set_ping_message(
+        self, event_id: int, *, channel_id: int, message_id: int
+    ) -> None:
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE events
+                SET ping_channel_id = $1, ping_message_id = $2
+                WHERE id = $3
+                """,
+                channel_id,
+                message_id,
+                event_id,
+            )
+
+    async def clear_ping_message(self, event_id: int) -> None:
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE events
+                SET ping_channel_id = NULL, ping_message_id = NULL
+                WHERE id = $1
+                """,
+                event_id,
+            )
+
     async def get_event(self, event_id: int) -> Optional[Event]:
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
@@ -493,7 +529,9 @@ class SQLiteDatabase:
                 match_a_type TEXT,
                 match_a_id INTEGER,
                 match_b_type TEXT,
-                match_b_id INTEGER
+                match_b_id INTEGER,
+                ping_channel_id INTEGER,
+                ping_message_id INTEGER
             );
 
             CREATE TABLE IF NOT EXISTS event_interest (
@@ -516,6 +554,8 @@ class SQLiteDatabase:
             ("match_a_id", "INTEGER"),
             ("match_b_type", "TEXT"),
             ("match_b_id", "INTEGER"),
+            ("ping_channel_id", "INTEGER"),
+            ("ping_message_id", "INTEGER"),
         )
         for name, col_type in columns:
             try:
@@ -700,6 +740,30 @@ class SQLiteDatabase:
         cursor = await self.conn.execute("DELETE FROM events WHERE id = ?", (event_id,))
         await self.conn.commit()
         return cursor.rowcount > 0
+
+    async def set_ping_message(
+        self, event_id: int, *, channel_id: int, message_id: int
+    ) -> None:
+        await self.conn.execute(
+            """
+            UPDATE events
+            SET ping_channel_id = ?, ping_message_id = ?
+            WHERE id = ?
+            """,
+            (channel_id, message_id, event_id),
+        )
+        await self.conn.commit()
+
+    async def clear_ping_message(self, event_id: int) -> None:
+        await self.conn.execute(
+            """
+            UPDATE events
+            SET ping_channel_id = NULL, ping_message_id = NULL
+            WHERE id = ?
+            """,
+            (event_id,),
+        )
+        await self.conn.commit()
 
     async def get_event(self, event_id: int) -> Optional[Event]:
         async with self.conn.execute(

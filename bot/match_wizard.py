@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Union
 
 import discord
 
+from bot.match_messages import MATCH_PING_ALLOWED, format_match_ping_from_event
 from bot.messaging import send_ephemeral
 from bot.parsers import parse_date, parse_time_12h
 
@@ -33,23 +34,8 @@ def side_display_name(side: MentionableSide) -> str:
     return side.name
 
 
-def side_mention(side: MentionableSide) -> str:
-    return side.mention
-
-
 def side_storage(side: MentionableSide) -> tuple[str, int]:
     return side_kind(side), side.id
-
-
-def format_match_ping(event_date, event_time: str, event_id: int, side_a, side_b) -> str:
-    nice_date = event_date.strftime("%A, %B %d, %Y")
-    return (
-        "**Match Scheduled**\n"
-        f"{side_mention(side_a)} vs {side_mention(side_b)}\n\n"
-        f"**Date:** {nice_date}\n"
-        f"**Time:** {event_time}\n"
-        f"**Calendar ID:** #{event_id}"
-    )
 
 
 class MatchInfoModal(discord.ui.Modal, title="New match"):
@@ -153,19 +139,14 @@ class MatchInfoModal(discord.ui.Modal, title="New match"):
 
         if isinstance(channel, discord.TextChannel):
             try:
-                await channel.send(
-                    format_match_ping(
-                        event.event_date,
-                        event.event_time or "",
-                        event.id,
-                        self.side_a,
-                        self.side_b,
-                    ),
-                    allowed_mentions=discord.AllowedMentions(
-                        users=True,
-                        roles=True,
-                        everyone=False,
-                    ),
+                message = await channel.send(
+                    format_match_ping_from_event(event),
+                    allowed_mentions=MATCH_PING_ALLOWED,
+                )
+                await self.bot.db.set_ping_message(
+                    event.id,
+                    channel_id=channel.id,
+                    message_id=message.id,
                 )
             except discord.HTTPException:
                 log.exception("Failed sending match ping message")

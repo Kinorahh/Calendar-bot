@@ -19,6 +19,8 @@ class Event:
     match_a_id: Optional[int] = None
     match_b_type: Optional[str] = None
     match_b_id: Optional[int] = None
+    ping_channel_id: Optional[int] = None
+    ping_message_id: Optional[int] = None
 
     @property
     def is_match(self) -> bool:
