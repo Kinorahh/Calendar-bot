@@ -6,25 +6,26 @@ Discord calendar bot for weekly game/event schedules. Built in Python for Railwa
 
 - **Week calendar** (Mon–Sun) listing events under each day — no hour grid
 - **Live calendar message** that refreshes when events are added/edited/removed
-- **Week navigation** with Prev / This Week / Next buttons (Prev/Next = mods only)
-- **Interest / RSVP** via `/event view` + ⭐ Interested button
-- **Mods/admins only** for add / edit / remove (plus Manage Server / Administrator)
-- **Monday snapshot** posted automatically to a channel you configure
+- **Week navigation** with Prev / This Week / Next buttons (Prev/Next = admin roles only)
+- **Match scheduling** via `/create match` for everyone (user vs user or role vs role)
+- **Admin-role gated** management commands; match participants can edit/remove their own match
+- **Monday auto-advance** of the live calendar to the current week
 - **PostgreSQL** on Railway so events survive restarts and you can browse past weeks
 
 ## Commands
 
 | Command | Who | What |
 |---|---|---|
-| `/calendar` | Everyone | Show this week + navigate weeks |
-| `/post_calendar` | Mods | Pin a live updating calendar in a channel |
-| `/event add` | Mods | Private Proceed → one form (title, date, time) |
-| `/event edit` | Mods | Edit an event by id |
-| `/event remove` | Mods | Remove an event by id |
-| `/event view` | Everyone | Event details + mark Interested |
-| `/setup announce_channel` | Mods | Monday weekly post channel |
-| `/setup timezone` | Mods | e.g. `America/New_York` |
-| `/setup status` | Everyone | Show current settings |
+| `/post_calendar` | Admins | Pin a live updating calendar in a channel |
+| `/create match` | Everyone | Schedule a match (two users or two roles) → date/time form |
+| `/event add` | Admins | Private Proceed → one form (title, date, time) |
+| `/event edit` | Admins or match participants | Edit an event by id |
+| `/event remove` | Admins or match participants | Remove an event by id |
+| `/event view` | Everyone | Event details (ephemeral, no buttons) |
+| `/setup timezone` | Admins | e.g. `America/New_York` |
+| `/setup status` | Admins | Show current settings |
+
+Admin roles are configured with `ADMIN_ROLE_NAMES` (default: Admin, Moderator, Mod, Calendar Admin).
 
 Event ids appear on the calendar as `(#3)` next to each event.
 
@@ -64,8 +65,7 @@ Event ids appear on the calendar as `(#3)` next to each event.
 | `DISCORD_TOKEN` | `your bot token` | Required |
 | `DATABASE_URL` | *(from Postgres reference)* | Required on Railway |
 | `TIMEZONE` | `America/New_York` | Default week/Monday timezone |
-| `WEEKLY_POST_HOUR` | `9` | Local hour (0–23) for the Monday post |
-| `ADMIN_ROLE_NAMES` | `Admin,Moderator,Mod` | Role names that can manage events |
+| `ADMIN_ROLE_NAMES` | `Admin,Moderator,Mod` | Role names that can manage the calendar |
 | `GUILD_ID` | `123...` | Recommended for instant slash-command updates |
 
 ### 4. Redeploy and verify
@@ -74,7 +74,7 @@ Event ids appear on the calendar as `(#3)` next to each event.
 2. In **Logs**, look for:
    - `Connected to PostgreSQL`
    - `Logged in as ...`
-3. In Discord, re-run setup if needed (`/setup`, `/post_calendar`), then `/event add`.
+3. In Discord, re-run setup if needed (`/setup timezone`, `/post_calendar`), then `/event add` or `/create match`.
 
 Old SQLite data on the container disk is **not** migrated automatically — add events again (or ask for a one-time migration if you already have a lot).
 

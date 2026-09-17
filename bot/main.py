@@ -25,9 +25,9 @@ log = logging.getLogger(__name__)
 COGS = (
     "bot.cogs.calendar_cog",
     "bot.cogs.events_cog",
+    "bot.cogs.create_cog",
     "bot.cogs.weekly_cog",
 )
-
 
 class CalendarBot(commands.Bot):
     def __init__(self) -> None:

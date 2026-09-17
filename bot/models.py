@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date
 from typing import Optional
 
 
@@ -15,7 +15,14 @@ class Event:
     description: str
     created_by: int
     created_at: str
-    interested_count: int = 0
+    match_a_type: Optional[str] = None  # "user" | "role"
+    match_a_id: Optional[int] = None
+    match_b_type: Optional[str] = None
+    match_b_id: Optional[int] = None
+
+    @property
+    def is_match(self) -> bool:
+        return self.match_a_type is not None and self.match_b_type is not None
 
 
 @dataclass(slots=True)

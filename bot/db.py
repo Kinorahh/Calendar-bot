@@ -1,4 +1,4 @@
-"""Async persistence for events, interest, and guild settings.
+"""Async persistence for events and guild settings.
 
 Uses PostgreSQL when DATABASE_URL is set (Railway), otherwise SQLite locally.
 """
@@ -51,6 +51,10 @@ class Database(Protocol):
         event_time: Optional[str],
         description: str,
         created_by: int,
+        match_a_type: Optional[str] = None,
+        match_a_id: Optional[int] = None,
+        match_b_type: Optional[str] = None,
+        match_b_id: Optional[int] = None,
     ) -> Event: ...
     async def update_event(
         self,
@@ -67,8 +71,6 @@ class Database(Protocol):
     async def get_events_between(
         self, guild_id: int, start: date, end: date
     ) -> list[Event]: ...
-    async def toggle_interest(self, event_id: int, user_id: int) -> tuple[bool, int]: ...
-    async def list_interested_user_ids(self, event_id: int) -> list[int]: ...
     async def guilds_with_announcements(self) -> list[GuildSettings]: ...
     async def guilds_with_live_calendar(self) -> list[GuildSettings]: ...
 
@@ -107,6 +109,14 @@ def _optional_int(value: Any) -> Optional[int]:
     return None if value is None else int(value)
 
 
+def _row_value(row: Any, key: str, default: Any = None) -> Any:
+    try:
+        value = row[key]
+    except (KeyError, IndexError, TypeError):
+        return default
+    return default if value is None else value
+
+
 def _event_from_row(row: Any) -> Event:
     return Event(
         id=int(row["id"]),
@@ -117,7 +127,10 @@ def _event_from_row(row: Any) -> Event:
         description=row["description"] or "",
         created_by=int(row["created_by"]),
         created_at=str(row["created_at"]),
-        interested_count=int(row["interested_count"] or 0),
+        match_a_type=_row_value(row, "match_a_type"),
+        match_a_id=_optional_int(_row_value(row, "match_a_id")),
+        match_b_type=_row_value(row, "match_b_type"),
+        match_b_id=_optional_int(_row_value(row, "match_b_id")),
     )
 
 
@@ -136,6 +149,7 @@ class PostgresDatabase:
     async def connect(self) -> None:
         self._pool = await asyncpg.create_pool(self._dsn, min_size=1, max_size=5)
         await self._create_tables()
+        await self._migrate_match_columns()
         converted = await self._migrate_event_times_to_12h()
         log.info("Connected to PostgreSQL")
         if converted:
@@ -166,7 +180,11 @@ class PostgresDatabase:
                     event_time TEXT,
                     description TEXT NOT NULL DEFAULT '',
                     created_by BIGINT NOT NULL,
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    match_a_type TEXT,
+                    match_a_id BIGINT,
+                    match_b_type TEXT,
+                    match_b_id BIGINT
                 );
 
                 CREATE TABLE IF NOT EXISTS event_interest (
@@ -180,6 +198,16 @@ class PostgresDatabase:
                     ON events (guild_id, event_date);
                 """
             )
+
+    async def _migrate_match_columns(self) -> None:
+        async with self.pool.acquire() as conn:
+            for stmt in (
+                "ALTER TABLE events ADD COLUMN IF NOT EXISTS match_a_type TEXT",
+                "ALTER TABLE events ADD COLUMN IF NOT EXISTS match_a_id BIGINT",
+                "ALTER TABLE events ADD COLUMN IF NOT EXISTS match_b_type TEXT",
+                "ALTER TABLE events ADD COLUMN IF NOT EXISTS match_b_id BIGINT",
+            ):
+                await conn.execute(stmt)
 
     async def _migrate_event_times_to_12h(self) -> int:
         """One-time style fix: rewrite stored 24h times like 21:00 → 9:00 PM."""
@@ -286,13 +314,18 @@ class PostgresDatabase:
         event_time: Optional[str],
         description: str,
         created_by: int,
+        match_a_type: Optional[str] = None,
+        match_a_id: Optional[int] = None,
+        match_b_type: Optional[str] = None,
+        match_b_id: Optional[int] = None,
     ) -> Event:
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
                 INSERT INTO events (
-                    guild_id, title, event_date, event_time, description, created_by, created_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    guild_id, title, event_date, event_time, description, created_by,
+                    created_at, match_a_type, match_a_id, match_b_type, match_b_id
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                 RETURNING id
                 """,
                 guild_id,
@@ -302,6 +335,10 @@ class PostgresDatabase:
                 description.strip(),
                 created_by,
                 datetime.now(timezone.utc),
+                match_a_type,
+                match_a_id,
+                match_b_type,
+                match_b_id,
             )
         event = await self.get_event(int(row["id"]))
         assert event is not None
@@ -355,13 +392,7 @@ class PostgresDatabase:
     async def get_event(self, event_id: int) -> Optional[Event]:
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
-                """
-                SELECT e.*,
-                       (SELECT COUNT(*) FROM event_interest i WHERE i.event_id = e.id)
-                           AS interested_count
-                FROM events e
-                WHERE e.id = $1
-                """,
+                "SELECT e.* FROM events e WHERE e.id = $1",
                 event_id,
             )
         return _event_from_row(row) if row else None
@@ -372,9 +403,7 @@ class PostgresDatabase:
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
                 """
-                SELECT e.*,
-                       (SELECT COUNT(*) FROM event_interest i WHERE i.event_id = e.id)
-                           AS interested_count
+                SELECT e.*
                 FROM events e
                 WHERE e.guild_id = $1
                   AND e.event_date >= $2
@@ -389,55 +418,6 @@ class PostgresDatabase:
                 end,
             )
         return [_event_from_row(row) for row in rows]
-
-    async def toggle_interest(self, event_id: int, user_id: int) -> tuple[bool, int]:
-        async with self.pool.acquire() as conn:
-            existing = await conn.fetchrow(
-                """
-                SELECT 1 FROM event_interest
-                WHERE event_id = $1 AND user_id = $2
-                """,
-                event_id,
-                user_id,
-            )
-            if existing:
-                await conn.execute(
-                    """
-                    DELETE FROM event_interest
-                    WHERE event_id = $1 AND user_id = $2
-                    """,
-                    event_id,
-                    user_id,
-                )
-                interested = False
-            else:
-                await conn.execute(
-                    """
-                    INSERT INTO event_interest (event_id, user_id, created_at)
-                    VALUES ($1, $2, $3)
-                    """,
-                    event_id,
-                    user_id,
-                    datetime.now(timezone.utc),
-                )
-                interested = True
-            count = await conn.fetchval(
-                "SELECT COUNT(*) FROM event_interest WHERE event_id = $1",
-                event_id,
-            )
-        return interested, int(count)
-
-    async def list_interested_user_ids(self, event_id: int) -> list[int]:
-        async with self.pool.acquire() as conn:
-            rows = await conn.fetch(
-                """
-                SELECT user_id FROM event_interest
-                WHERE event_id = $1
-                ORDER BY created_at ASC
-                """,
-                event_id,
-            )
-        return [int(row["user_id"]) for row in rows]
 
     async def guilds_with_announcements(self) -> list[GuildSettings]:
         async with self.pool.acquire() as conn:
@@ -473,6 +453,7 @@ class SQLiteDatabase:
         self._conn.row_factory = aiosqlite.Row
         await self._conn.execute("PRAGMA foreign_keys = ON")
         await self._create_tables()
+        await self._migrate_match_columns()
         converted = await self._migrate_event_times_to_12h()
         log.info("Connected to SQLite at %s", self.path)
         if converted:
@@ -508,7 +489,11 @@ class SQLiteDatabase:
                 event_time TEXT,
                 description TEXT NOT NULL DEFAULT '',
                 created_by INTEGER NOT NULL,
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                match_a_type TEXT,
+                match_a_id INTEGER,
+                match_b_type TEXT,
+                match_b_id INTEGER
             );
 
             CREATE TABLE IF NOT EXISTS event_interest (
@@ -523,6 +508,23 @@ class SQLiteDatabase:
                 ON events (guild_id, event_date);
             """
         )
+        await self.conn.commit()
+
+    async def _migrate_match_columns(self) -> None:
+        columns = (
+            ("match_a_type", "TEXT"),
+            ("match_a_id", "INTEGER"),
+            ("match_b_type", "TEXT"),
+            ("match_b_id", "INTEGER"),
+        )
+        for name, col_type in columns:
+            try:
+                await self.conn.execute(
+                    f"ALTER TABLE events ADD COLUMN {name} {col_type}"
+                )
+            except Exception:
+                # Column already exists on upgraded databases.
+                pass
         await self.conn.commit()
 
     async def _migrate_event_times_to_12h(self) -> int:
@@ -627,13 +629,18 @@ class SQLiteDatabase:
         event_time: Optional[str],
         description: str,
         created_by: int,
+        match_a_type: Optional[str] = None,
+        match_a_id: Optional[int] = None,
+        match_b_type: Optional[str] = None,
+        match_b_id: Optional[int] = None,
     ) -> Event:
         created_at = datetime.now(timezone.utc).isoformat()
         cursor = await self.conn.execute(
             """
             INSERT INTO events (
-                guild_id, title, event_date, event_time, description, created_by, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                guild_id, title, event_date, event_time, description, created_by,
+                created_at, match_a_type, match_a_id, match_b_type, match_b_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 guild_id,
@@ -643,6 +650,10 @@ class SQLiteDatabase:
                 description.strip(),
                 created_by,
                 created_at,
+                match_a_type,
+                match_a_id,
+                match_b_type,
+                match_b_id,
             ),
         )
         await self.conn.commit()
@@ -692,13 +703,7 @@ class SQLiteDatabase:
 
     async def get_event(self, event_id: int) -> Optional[Event]:
         async with self.conn.execute(
-            """
-            SELECT e.*,
-                   (SELECT COUNT(*) FROM event_interest i WHERE i.event_id = e.id)
-                       AS interested_count
-            FROM events e
-            WHERE e.id = ?
-            """,
+            "SELECT e.* FROM events e WHERE e.id = ?",
             (event_id,),
         ) as cursor:
             row = await cursor.fetchone()
@@ -709,9 +714,7 @@ class SQLiteDatabase:
     ) -> list[Event]:
         async with self.conn.execute(
             """
-            SELECT e.*,
-                   (SELECT COUNT(*) FROM event_interest i WHERE i.event_id = e.id)
-                       AS interested_count
+            SELECT e.*
             FROM events e
             WHERE e.guild_id = ?
               AND e.event_date >= ?
@@ -725,46 +728,6 @@ class SQLiteDatabase:
         ) as cursor:
             rows = await cursor.fetchall()
         return [_event_from_row(row) for row in rows]
-
-    async def toggle_interest(self, event_id: int, user_id: int) -> tuple[bool, int]:
-        async with self.conn.execute(
-            "SELECT 1 FROM event_interest WHERE event_id = ? AND user_id = ?",
-            (event_id, user_id),
-        ) as cursor:
-            existing = await cursor.fetchone()
-
-        now = datetime.now(timezone.utc).isoformat()
-        if existing:
-            await self.conn.execute(
-                "DELETE FROM event_interest WHERE event_id = ? AND user_id = ?",
-                (event_id, user_id),
-            )
-            interested = False
-        else:
-            await self.conn.execute(
-                """
-                INSERT INTO event_interest (event_id, user_id, created_at)
-                VALUES (?, ?, ?)
-                """,
-                (event_id, user_id, now),
-            )
-            interested = True
-        await self.conn.commit()
-
-        async with self.conn.execute(
-            "SELECT COUNT(*) AS c FROM event_interest WHERE event_id = ?",
-            (event_id,),
-        ) as cursor:
-            row = await cursor.fetchone()
-        return interested, int(row["c"])
-
-    async def list_interested_user_ids(self, event_id: int) -> list[int]:
-        async with self.conn.execute(
-            "SELECT user_id FROM event_interest WHERE event_id = ? ORDER BY created_at ASC",
-            (event_id,),
-        ) as cursor:
-            rows = await cursor.fetchall()
-        return [int(row["user_id"]) for row in rows]
 
     async def guilds_with_announcements(self) -> list[GuildSettings]:
         async with self.conn.execute(

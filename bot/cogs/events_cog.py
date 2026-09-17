@@ -6,12 +6,12 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from bot import config
 from bot.add_wizard import EventAddProceedView
 from bot.formatting import build_event_embed
 from bot.messaging import send_ephemeral
 from bot.parsers import parse_date, parse_time_12h
-from bot.permissions import require_manager
-from bot.views import EventInterestView
+from bot.permissions import can_modify_event, has_admin_role, require_admin
 
 
 class EventsCog(commands.Cog):
@@ -22,10 +22,10 @@ class EventsCog(commands.Cog):
 
     @event.command(
         name="add",
-        description="Add an event with a private form (mods/admins)",
+        description="Add an event with a private form (admins)",
     )
     async def add(self, interaction: discord.Interaction) -> None:
-        if not await require_manager(interaction):
+        if not await require_admin(interaction):
             return
         assert interaction.guild is not None
 
@@ -39,7 +39,10 @@ class EventsCog(commands.Cog):
             view=view,
         )
 
-    @event.command(name="edit", description="Edit an existing event (mods/admins)")
+    @event.command(
+        name="edit",
+        description="Edit an existing event (admins or match participants)",
+    )
     @app_commands.describe(
         event_id="Event id shown on the calendar",
         title="New title",
@@ -58,14 +61,35 @@ class EventsCog(commands.Cog):
         clear_time: bool = False,
         description: str | None = None,
     ) -> None:
-        if not await require_manager(interaction):
+        if interaction.guild is None:
+            await send_ephemeral(interaction, "Use this command in a server.")
             return
-        assert interaction.guild is not None
 
         existing = await self.bot.db.get_event(event_id)
         if existing is None or existing.guild_id != interaction.guild.id:
             await send_ephemeral(interaction, "Event not found in this server.")
             return
+
+        if not can_modify_event(interaction, existing):
+            await send_ephemeral(
+                interaction,
+                "Only users with an admin role "
+                f"({', '.join(sorted(config.ADMIN_ROLE_NAMES))}) "
+                "or participants of this match can edit it.",
+            )
+            return
+
+        # Match participants may only change date/time, not the match title.
+        if existing.is_match and isinstance(interaction.user, discord.Member):
+            if not has_admin_role(interaction.user):
+                if title is not None or description is not None:
+                    await send_ephemeral(
+                        interaction,
+                        "You can only change the date or time of your match.",
+                    )
+                    return
+                title = None
+                description = None
 
         event_date = None
         if date is not None:
@@ -97,16 +121,28 @@ class EventsCog(commands.Cog):
         )
         await self.bot.refresh_live_calendar(interaction.guild.id)
 
-    @event.command(name="remove", description="Remove an event (mods/admins)")
+    @event.command(
+        name="remove",
+        description="Remove an event (admins or match participants)",
+    )
     @app_commands.describe(event_id="Event id shown on the calendar")
     async def remove(self, interaction: discord.Interaction, event_id: int) -> None:
-        if not await require_manager(interaction):
+        if interaction.guild is None:
+            await send_ephemeral(interaction, "Use this command in a server.")
             return
-        assert interaction.guild is not None
 
         existing = await self.bot.db.get_event(event_id)
         if existing is None or existing.guild_id != interaction.guild.id:
             await send_ephemeral(interaction, "Event not found in this server.")
+            return
+
+        if not can_modify_event(interaction, existing):
+            await send_ephemeral(
+                interaction,
+                "Only users with an admin role "
+                f"({', '.join(sorted(config.ADMIN_ROLE_NAMES))}) "
+                "or participants of this match can remove it.",
+            )
             return
 
         await self.bot.db.delete_event(event_id)
@@ -115,7 +151,7 @@ class EventsCog(commands.Cog):
         )
         await self.bot.refresh_live_calendar(interaction.guild.id)
 
-    @event.command(name="view", description="View an event and mark yourself interested")
+    @event.command(name="view", description="View event details")
     @app_commands.describe(event_id="Event id shown on the calendar")
     async def view(self, interaction: discord.Interaction, event_id: int) -> None:
         if interaction.guild is None:
@@ -127,11 +163,8 @@ class EventsCog(commands.Cog):
             await send_ephemeral(interaction, "Event not found in this server.")
             return
 
-        user_ids = await self.bot.db.list_interested_user_ids(event_id)
-        mentions = [f"<@{uid}>" for uid in user_ids]
-        embed = build_event_embed(event, mentions)
-        view = EventInterestView(self.bot, event_id)
-        await send_ephemeral(interaction, embed=embed, view=view)
+        embed = build_event_embed(event)
+        await send_ephemeral(interaction, embed=embed)
 
 
 async def setup(bot: commands.Bot) -> None:

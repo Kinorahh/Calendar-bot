@@ -73,8 +73,7 @@ def live_calendar_footer(monday: date, timezone_name: str) -> str:
 
 def format_event_line(event: Event) -> str:
     time_bit = f"**{event.event_time}** " if event.event_time else ""
-    interest = f" · ⭐ {event.interested_count}" if event.interested_count else ""
-    return f"• {time_bit}{event.title}{interest} `(#{event.id})`"
+    return f"• {time_bit}{event.title} `(#{event.id})`"
 
 
 def build_week_embed(
@@ -129,7 +128,7 @@ def build_week_embed(
     return embed
 
 
-def build_event_embed(event: Event, interested_mentions: Optional[list[str]] = None) -> discord.Embed:
+def build_event_embed(event: Event) -> discord.Embed:
     when = event.event_date.strftime("%A, %b %d, %Y")
     if event.event_time:
         when = f"**{event.event_time}** · {when}"
@@ -140,11 +139,19 @@ def build_event_embed(event: Event, interested_mentions: Optional[list[str]] = N
         color=discord.Color.from_rgb(88, 166, 255),
     )
     embed.add_field(name="When", value=when, inline=False)
-    embed.add_field(name="Interested", value=str(event.interested_count), inline=True)
     embed.add_field(name="Event ID", value=str(event.id), inline=True)
-    if interested_mentions:
-        shown = ", ".join(interested_mentions[:15])
-        if len(interested_mentions) > 15:
-            shown += f" (+{len(interested_mentions) - 15} more)"
-        embed.add_field(name="Who's interested", value=shown, inline=False)
+    if event.is_match:
+        sides: list[str] = []
+        for side_type, side_id in (
+            (event.match_a_type, event.match_a_id),
+            (event.match_b_type, event.match_b_id),
+        ):
+            if side_id is None or side_type is None:
+                continue
+            if side_type == "role":
+                sides.append(f"<@&{side_id}>")
+            else:
+                sides.append(f"<@{side_id}>")
+        if sides:
+            embed.add_field(name="Match", value=" vs ".join(sides), inline=False)
     return embed
