@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Union
 
 import discord
 
-from bot.messaging import schedule_delete, send_ephemeral
+from bot.messaging import send_ephemeral
 from bot.parsers import parse_date, parse_time_12h
 
 if TYPE_CHECKING:
@@ -161,8 +161,6 @@ class MatchInfoModal(discord.ui.Modal, title="New match"):
                         everyone=False,
                     ),
                 )
-                # Notification still delivers; message cleans itself up after 2 minutes.
-                schedule_delete(message, 120)
             except discord.HTTPException:
                 log.exception("Failed sending match ping message")
 
